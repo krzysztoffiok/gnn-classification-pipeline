@@ -6,14 +6,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import os
 
-"""
-How the script works:
-1) load the gfw.config.Config object
-2) read user-defined parameters and lists of parameters to best used in experiments in various configurations
-3) run the "run_all_experiments" function, which iterates over lists of parameters, modifies locally the configuration 
-file for each test run and finally runs the "run" function 
-"""
-
+device = torch.device('cuda')
 
 config = gfw.config.Config()
 model_list = config.model_list

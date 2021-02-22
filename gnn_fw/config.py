@@ -17,21 +17,16 @@ class Config:
      spanning tree concept
     5) self.hidden_channel_list - a list of numbers of hidden channels per GNN layer that will be tested. Any integer
      will do, but think twice before having more than 500. This parameter greatly increases number of model parameters.
-    6) self.compute_node_embeddings_list - a list of bool which decides if node embeddings will be computed i.e.
-     if False is the only element of this list, we are not computing node embeddings at all even if later the node
-     embedding parameters are defined
-    7) self.node_embedding_method_list - a list of names of node embeddings methods to test (one in each test run).
+    6) self.node_embedding_method_list - a list of names of node embeddings methods to test (one in each test run).
      For possible choices (and their parameters) refer to gfw.utils.NodeEmbeddingFunctions.emb_func_dict
-    8) self.threshold_list - important only for MRI data sets. A list of threshold values of correlation coefficient
+    7) self.threshold_list - important only for MRI data sets. A list of threshold values of correlation coefficient
      which is used to decide if a connection between brain arreas exists or not. If set below -1, all connections are
      retained. If higher values like 0.5 are used, very likely disconnected graphs will appear in some cases which
      will prohibit correct/intended use of the framework
-    9) self.add_degree_list - a bool list defining if "degree" feature is to be added to node features or not
-    10) self.feature_set - important only for MRI data sets. Name of the feature set which defines node features to be
+    8) self.add_degree_list - a bool list defining if "degree" feature is to be added to node features or not
+    9) self.feature_set - important only for MRI data sets. Name of the feature set which defines node features to be
      derived from the time series data available for each node
-    11) self.brain_parcellation - important only for MRI data sets. int, reflects the number of areas into which
-     brain was divided in the analyzed data set.
-    12) self.nfolds - int, number of cross validated folds into which the data set will be divided during training and
+    10) self.nfolds - int, number of cross validated folds into which the data set will be divided during training and
      testing. Lowest possible choice is 2.
 
     More configuration options are available below, but attending them is not obligatory.
@@ -52,12 +47,12 @@ class Config:
     def __init__(self, gnn_model_name: str = "GNN", hidden_channels: int = 16, threshold: float = -2,
                  graph_type: str = "full", batch_size: int = 8, add_degree_to_node_features: bool = True,
                  compute_node_embeddings: bool = True, node_embedding_method: str = "NodeSketch"):
-        # 1) select the dataset. Possible datasets = "mutag", "uj", "hcp_17_51", "hcp_379_51"
-        # Warning: a CHANGE IN DATA SET LIKELY INVOLVES CHANGE IN BRAIN PARCELLATION AND NUMBER OF CLASSES
-        self.selected_dataset = "hcp_17_51"
+        # 1) select the dataset. Possible datasets = "mutag", "uj_200", "hcp_17_51", "hcp_379_51", "hcp_rs_104"
+        # Warning: a CHANGE IN DATA SET LIKELY INVOLVES CHANGE IN NUMBER OF CLASSES
+        self.selected_dataset = "hcp_rs_lr_104"
 
         # 2) define a list of models to test. Available models: ["GCN", "GNN", "GNNe", "SAGENET"]
-        self.model_list = ["GNN", "GCN"]
+        self.model_list = ["GCNe"]
 
         # 3) define a list of batch size values to test. Any integer will do, but the higher number the more RAM needed
         self.batch_size_list = [32]
@@ -68,30 +63,24 @@ class Config:
         self.graph_type_list = ["full"]
 
         # 5) define a list of hidden channel number per GNN layer
-        self.hidden_channel_list = [64, 128]
+        self.hidden_channel_list = [512]
 
-        # 6) decide if to compute node embeddings at all
-        self.compute_node_embeddings_list = [True, False]
+        # 6) define node_embedding_method_list to test. If one desires not to compute any node embeddings at all,
+        # pass ["False"]
+        self.node_embedding_method_list = ["NodeSketch"]
 
-        # 7) define node_embedding_method_list to test.
-        self.node_embedding_method_list = ["NodeSketch", "DeepWalk", "Role2Vec", "Feather"]
-
-        # 8) define threshold_list to test
+        # 7) define threshold_list to test
         self.threshold_list = [-2]
 
-        # 9) if add degree to features
-        self.add_degree_list = [False, True]
+        # 8) if add degree to features
+        self.add_degree_list = [False]
 
-        # 10) what features are to be computed from time series for each node
+        # 9) what features are to be computed from time series for each node
         # possible values are "empty", "ts_stats" (statistical parameters of time series from scipy.stats.describe)
         # ts_fresh (more statistical parameters), "mixed" (mix of ts_stats and ts_fresh)
-        self.feature_set = "mixed"
+        self.feature_set = "ts_stats"
 
-        # 11) set appropriate brain parcellation. Important only for MRI data sets. The value depends on the data set.
-        # Possible values are 200 for uj dataset and 17 or 379 for HCP.
-        self.brain_parcellation = 17
-
-        # 12) number of folds for cross validation
+        # 10) number of folds for cross validation
         self.nfolds = 2
 
         # if visualization (graphs) are to be computed. If True, the pipeline will do only that.
@@ -102,26 +91,25 @@ class Config:
         # if a password is provided and gfw.utils.send_notification_email function is configured with your email, you
         # will receive a notification email every time the framework finishes computation (if duration of experiment
         # took longer than 2 minutes)
-        self.password = None
+        self.password = ""
 
         # do not touch below this line. All other configuration parameters are defined automatically.
         # number of classes
         if self.selected_dataset in ["hcp_379_51", "hcp_17_51"]:
             self.number_of_classes = 7
-        elif self.selected_dataset in ["uj", "mutag"]:
+        elif self.selected_dataset in ["uj_200", "mutag", "hcp_rs_104", "hcp_rs_rl_104", "hcp_rs_lr_104"]:
             self.number_of_classes = 2
 
-        if False in self.compute_node_embeddings_list:
-            self.node_embedding_method_list.append(False)
-
+        if self.selected_dataset == "uj_200":
+            self.filenames = ["fmri_corr.npy", "fmri_ts.npy"]
+        elif self.selected_dataset == "hcp_rs_lr_104":
+            self.filenames = ["fc/corr_sum_lr.npy", "timeseries/sum_lr.npy", "subjectsID.npy", "HCPData.csv"]
+        elif self.selected_dataset == "hcp_rs_rl_104":
+            self.filenames = ["fc/corr_sum_rl.npy", "timeseries/sum_rl.npy", "subjectsID.npy", "HCPData.csv"]
+        elif self.selected_dataset == "hcp_rs_104":
+            self.filenames = ["fc/corr_rest1_lr.npy", "timeseries/rest1_lr.npy", "subjectsID.npy", "HCPData.csv"]
         # if the selected dataset is of type hcp functional, there can be many tasks and the below names are needed
         self.tasks_list = ['wm', 'gambling', 'motor', 'language', 'social', 'relational', 'emotion']
-
-        self.graph_type = graph_type
-        if self.graph_type.find("st") != -1:
-            self.spanning_tree = self.graph_type
-        else:
-            self.spanning_tree = False
 
         self.batch_size = batch_size
         self.threshold = threshold
@@ -140,9 +128,9 @@ class Config:
         self.training_parameters = {"number_of_classes": self.number_of_classes,
                                     "hidden_channels": hidden_channels,
                                     "lr": 1e-4,     # for mutag: 1e-2, for hcp_17_51 1e-4
-                                    "epochs": 10,
+                                    "epochs": 500,
                                     "min_lr": 1e-6,     # for mutag: 1e-4, for hcp_17_51 1e-6
                                     "patience": 20,
                                     "threshold": 1e-6,
-                                    "samples_for_final_test": 0.20,   # fraction of test split
+                                    "samples_for_final_test": 0.80,   # fraction of test split
                                     }
