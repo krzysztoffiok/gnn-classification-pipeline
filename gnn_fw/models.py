@@ -20,9 +20,9 @@ def model_selector(model_name):
     :return: not instantiated torch.geometric model class
     """
     # convention regarding model names: if a name is finishing with 'e', this means the model will use edge weights
-    model_name_dict = {"GCN-Kipf": GCN,
-                       "GCN": GNN,
-                       "GCNe": GNNe,
+    model_name_dict = {"GCN-Kipf": GCN_kipf,
+                       "GCN": GCNN,
+                       "GCNe": GCNe,
                        "SAGENET": SAGENET,
                        }
     return model_name_dict[model_name]
@@ -202,9 +202,9 @@ class SAGENET(torch.nn.Module):
         return x
 
 
-class GCN(torch.nn.Module):
+class GCN_kipf(torch.nn.Module):
     def __init__(self, hidden_channels, number_of_features, number_of_classes):
-        super(GCN, self).__init__()
+        super(GCN_kipf, self).__init__()
         torch.manual_seed(12345)
         self.conv1 = GCNConv(number_of_features, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, hidden_channels)
@@ -230,9 +230,9 @@ class GCN(torch.nn.Module):
         return x
 
 
-class GNNe(torch.nn.Module):
+class GCNe(torch.nn.Module):
     def __init__(self, hidden_channels, number_of_features, number_of_classes):
-        super(GNNe, self).__init__()
+        super(GCNe, self).__init__()
         torch.manual_seed(12345)
         self.conv1 = GraphConv(number_of_features, hidden_channels)
         self.conv2 = GraphConv(hidden_channels, hidden_channels)
@@ -254,9 +254,9 @@ class GNNe(torch.nn.Module):
         return x
 
 
-class GNN(torch.nn.Module):
+class GCN(torch.nn.Module):
     def __init__(self, hidden_channels, number_of_features, number_of_classes):
-        super(GNN, self).__init__()
+        super(GCN, self).__init__()
         torch.manual_seed(12345)
         self.conv1 = GraphConv(number_of_features, hidden_channels)
         self.conv2 = GraphConv(hidden_channels, hidden_channels)
