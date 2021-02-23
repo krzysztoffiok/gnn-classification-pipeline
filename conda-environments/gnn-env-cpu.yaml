@@ -1,9 +1,9 @@
 # environment for ubuntu 16.04
 #
-# install: conda env create -f gnn-env.yaml
-# update:  conda env update -f gnn-env.yaml
+# install: conda env create -f gnn-env-cpu.yaml
+# update:  conda env update -f gnn-env-cpu.yaml
 name: gnn-env
-# dependencies:
+dependencies:
 - python=3.6
 - pip:
   - numpy
@@ -14,8 +14,16 @@ name: gnn-env
   - matplotlib
   - karateclub
   - ruamel.yaml
+  - tsfresh
   - jupyter
   - --find-link https://download.pytorch.org/whl/torch_stable.html
   - torch==1.7.1+cpu
   - torchvision==0.8.2+cpu
   - torchaudio==0.7.2
+  - --find-link https://pytorch-geometric.com/whl/torch-1.7.0+cpu.html
+  - torch-scatter # -f https://pytorch-geometric.com/whl/torch-1.7.0+cpu.html 
+  - torch-sparse #-f https://pytorch-geometric.com/whl/torch-1.7.0+cpu.html
+  - torch-cluster #-f https://pytorch-geometric.com/whl/torch-1.7.0+cpu.html
+  - torch-spline-conv #-f https://pytorch-geometric.com/whl/torch-1.7.0+cpu.html
+  - torch-geometric
+
