@@ -21,7 +21,7 @@ def model_selector(model_name):
     """
     # convention regarding model names: if a name is finishing with 'e', this means the model will use edge weights
     model_name_dict = {"GCN-Kipf": GCN_kipf,
-                       "GCN": GCNN,
+                       "GCN": GCN,
                        "GCNe": GCNe,
                        "SAGENET": SAGENET,
                        }
@@ -30,7 +30,7 @@ def model_selector(model_name):
 
 def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
                    test_run_name, threshold, feature_text, training_parameters,
-                   directories, gnn_model_name, split_num, figure, final_test_loader):
+                   directories, gnn_model_name, split_num, figure, final_test_loader, force_device):
     """
     A common model lanucher for all implemented models of type GCN (Graph Convolutional Models)
     :param model: not instantiated model from model_selector
@@ -51,6 +51,7 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
     :param figure: a matplotlib.pyplot figure created earlier
     :param final_test_loader: final test (holdout set) data loader. Usually created by gfw.utils.create_data_loader
      function
+    :param force_device: str. Option to force the selection of device which will be used for computations.
     :return: preds, trues: predicted and ground truth labels of the data instances from the
      holdout set (final test loader)
     save_string: a long string containing encoded information regarding the test run allowing to identify the
@@ -65,11 +66,17 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
 
     initial_model = model
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    if torch.cuda.is_available():
-        print("Using GPU")
+    # selecting device for computations
+    if force_device not in ['cuda', 'cpu']:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if torch.cuda.is_available():
+            print("Using GPU")
+        else:
+            print("Using CPU")
     else:
-        print("Using CPU")
+        device = torch.device(force_device)
+        print(f"Using {force_device}")
+
     model = model.to(device)
 
     test_run_name = [test_run_name, training_parameters['lr'], training_parameters['hidden_channels'],
@@ -77,8 +84,13 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
                      gnn_model_name, split_num]
     optimizer = torch.optim.Adam(model.parameters(), lr=training_parameters['lr'])
     criterion = torch.nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=training_parameters['patience'],
-                                                           threshold=training_parameters['threshold'])
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
+                                                           mode='max',
+                                                           patience=training_parameters['patience'],
+                                                           threshold=training_parameters['threshold'],
+                                                           min_lr=training_parameters['min_lr'],
+                                                           factor=training_parameters['factor'],
+                                                           threshold_mode=training_parameters['threshold_mode'])
 
     def train(use_edges, loader):
         model.train()
@@ -166,7 +178,7 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
               f"scheduler_{split_num}.pkl", 'wb') as handle:
         pickle.dump(ssd, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return preds, trues, save_string, figure
+    return preds, trues, save_string, figure, model, device
 
 
 """

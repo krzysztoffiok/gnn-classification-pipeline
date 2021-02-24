@@ -20,6 +20,8 @@ from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn import metrics
 from scipy.stats import wasserstein_distance
 from networkx.algorithms import tree
+from captum.attr import Saliency, IntegratedGradients
+from collections import defaultdict
 
 config = gfw.config.Config()
 
@@ -627,9 +629,12 @@ def create_mri_dataset(correlation_matrix, index_of_source_nodes, index_of_targe
             y = 0
 
             # create data objects and append them in a list
-            data = Data(x=x, edge_index=edge_index, edge_attr=torch.tensor(edge_attributes.clone().detach(),
-                                                                           dtype=torch.float32),
-                        y=y, num_nodes=brain_parcellation)
+            data = Data(x=x.clone().detach(),
+                        edge_index=edge_index.clone().detach(),
+                        edge_attr=torch.tensor(edge_attributes.clone().detach(),
+                                               dtype=torch.float32),
+                        y=y,
+                        num_nodes=brain_parcellation)
             dataset.append(data)
 
         torch.save(dataset, dataset_filepath)
@@ -654,7 +659,8 @@ def skf_splitter(nfolds, y_list, filenames):
             splits.append((train, test))
 
     else:
-        # the hcp_104_lr and hcp_104_rl data sets use concatenations of recordings from two separate sessions
+        print("Using simple splitter.")
+        # the hcp_102_lr and hcp_102_rl data sets use concatenations of recordings from two separate sessions
         # the idea is to train on the first session and test on the second session.
         train_indexes = list(range(0, int(len(y_list)/2)))
         test_indexes = list(range(int(len(y_list)/2), len(y_list)))
@@ -687,7 +693,7 @@ def skf_splitter(nfolds, y_list, filenames):
 # walk_paths[0]
 
 
-def compute_metrics(df_res, test_run_name):
+def compute_metrics(df_res, test_run_name, dataset_name):
     """
     A function which computes various classification metrics from a precomputed pandas data frame (in .xlsx format)
     :param df_res: pandas data frame in .xlsx format with columns: "trues" - ground truth labels, "preds" - predicted
@@ -695,7 +701,11 @@ def compute_metrics(df_res, test_run_name):
     :param test_run_name: the name of the test run which the results data frame is representing
     :return: None, but saves .xlsx with metric results on disk
     """
-    save_path = f"./{config.directories['training visualizations']}/{test_run_name}"
+    save_path = f"./{config.directories['training visualizations']}/{dataset_name}/{test_run_name}"
+    try:
+        os.makedirs(f"./{config.directories['training visualizations']}/{dataset_name}")
+    except FileExistsError:
+        pass
     df_res.to_excel(f"{save_path}_trues_preds.xlsx")
 
     # code borrowed from https://gist.github.com/nickynicolson/202fe765c99af49acb20ea9f77b6255e
@@ -833,9 +843,9 @@ def decode_feature_string(feature_string):
 
 def load_dataset(config):
     """
-    A function to load data sets (optionally compute some elements)
+    A function to load data sets (and often compute some elements)
     :param config: the configuration of experiment from gfw.config.Config
-    :return:
+    :return: dataset [list od PytorchGeometric Data objects], test_run_name_for_whole_dataset, y_list, test_run_name
     """
 
     if "mutag" in config.selected_dataset:
@@ -916,6 +926,65 @@ def load_dataset(config):
     return dataset, test_run_name_for_whole_dataset, y_list, test_run_name
 
 
+# below a set of functions adopted (and modified) from:
+# https://colab.research.google.com/drive/1fLJbFPz0yMCQg81DdCP5I8jXw9LoggKO?usp=sharing
+# a pytorch geometric example notebook 6
+def model_forward(edge_mask, data, device, model):
+    batch = torch.zeros(data.x.shape[0], dtype=int).to(device)
+    out = model(data.x, data.edge_index, edge_mask, batch)  # THIS IS the crutial line which must match the
+    # definition of the trained model in question in models.py, this one works for GCNe
+    return out
+
+
+def explain_gnn_model(method, data, device, model, target=0):
+    input_mask = torch.ones(data.edge_index.shape[1]).requires_grad_(True).to(device)
+    if method == 'ig':
+        ig = IntegratedGradients(model_forward)
+        mask = ig.attribute(input_mask, target=target,
+                            additional_forward_args=(data.to(device), device, model, ),
+                            internal_batch_size=data.edge_index.shape[1])
+    elif method == 'saliency':
+        saliency = Saliency(model_forward)
+        mask = saliency.attribute(input_mask, target=target,
+                                  additional_forward_args=(data.to(device), device, model, ))
+    else:
+        raise Exception('Unknown explanation method')
+
+    edge_mask = np.abs(mask.cpu().detach().numpy())
+    if edge_mask.max() > 0:  # avoid division by zero
+        edge_mask = edge_mask / edge_mask.max()
+    return edge_mask
+
+
+def aggregate_edge_directions(edge_mask, data):
+    edge_mask_dict = defaultdict(float)
+    for val, u, v in list(zip(edge_mask, *data.edge_index)):
+        u, v = u.item(), v.item()
+        if u > v:
+            u, v = v, u
+        edge_mask_dict[(u, v)] += val
+    return edge_mask_dict
+
+
+def draw_explained_graph(g, method, test_run, data_instance, edge_mask=None, draw_edge_labels=False):
+    g = g.copy().to_undirected()
+    if edge_mask is None:
+        edge_color = 'black'
+        widths = None
+    else:
+        edge_color = [edge_mask[(u, v)] for u, v in g.edges()]
+        widths = [x * 5 for x in edge_color]
+    nx.draw_networkx(g, width=widths,
+                     edge_color=edge_color, edge_cmap=plt.cm.Blues,
+                     node_color='azure')
+
+    if draw_edge_labels and edge_mask is not None:
+        edge_labels = {k: ('%.2f' % v) for k, v in edge_mask.items()}
+        nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels,
+                                     font_color='red')
+    plt.savefig(f"./graph_visualizations/{test_run}_{method}_{data_instance}.png")
+
+
 """
 Below is a very preliminary code from Reza Davahli to create an example data set for node regression task.
 It might be useful because it shows a working example of how to create an instance of "InMemoryDataset" object
@@ -986,3 +1055,6 @@ class COVIDDataset(InMemoryDataset):
 
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
+
+# a nice place with datasets
+# https://snap.stanford.edu/data/#disjointgraphs

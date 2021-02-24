@@ -5,8 +5,16 @@ import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
 import os
+from torch_geometric.utils import to_networkx
 
-device = torch.device('cuda')
+"""
+How the script works:
+1) load the gfw.config.Config object
+2) read user-defined parameters and lists of parameters to best used in experiments in various configurations
+3) run the "run_all_experiments" function, which iterates over lists of parameters, modifies locally the configuration 
+file for each test run and finally runs the "run" function 
+"""
+
 
 config = gfw.config.Config()
 model_list = config.model_list
@@ -19,14 +27,15 @@ add_degree_list = config.add_degree_list
 
 
 def run(config):
-    dataset, test_run_name_for_whole_dataset, y_list, test_run_name = load_dataset(config)
+    dataset, test_run_name_for_whole_dataset, y_list, test_run_name = gfw.utils.load_dataset(config)
 
     # if visualization is required, it will be produced, but this will be the last step.
     if config.visualization:
-        gfw.utils.visualize_graph(3, dataset, test_run_name, config.max_spanning_tree)
+        gfw.utils.visualize_graph(3, dataset, test_run_name, config.graph_type)
 
     # if we want to use the maximum spanning tree approach
-    if config.spanning_tree:
+    if config.graph_type.find("st") != -1:
+        print("Spanning tree dataset version was selected.")
         test_run_name = f"{test_run_name}_{config.graph_type}"
         dataset_filepath = f"{config.directories['datasets']}/{test_run_name}.pt"
 
@@ -38,7 +47,7 @@ def run(config):
             new_dataset = list()
             for num, data in enumerate(dataset):
                 print(f"Now computing {num} data instance. {len(dataset) - num} remaining.")
-                new_data = gfw.utils.create_mst_data(data, config.spanning_tree)
+                new_data = gfw.utils.create_mst_data(data, config.graph_type)
                 new_dataset.append(new_data)
             dataset = new_dataset
             torch.save(dataset, dataset_filepath)
@@ -46,7 +55,8 @@ def run(config):
     # compute embeddings for each graph
     if config.node_embedding_parameters['compute_node_embeddings']:
         dataset = gfw.utils.compute_node_embeddings(node_embedding_parameters=config.node_embedding_parameters,
-                                                    dataset=dataset, test_run_name=test_run_name)
+                                                    dataset=dataset, test_run_name=test_run_name,
+                                                    graph_type=config.graph_type)
 
     # add networkx features, now only degree is implemented
     if config.add_degree_to_node_features:
@@ -61,7 +71,7 @@ def run(config):
 
     # no matter which dataset, use the same splitter. Splits is a list (len=nfolds)
     # of tuples(train_indexes, test_indexes)
-    splits = gfw.utils.skf_splitter(nfolds=config.nfolds, y_list=y_list)
+    splits = gfw.utils.skf_splitter(nfolds=config.nfolds, y_list=y_list, filenames=config.filenames)
 
     # this ensures that there are no duplicated edges
     dataset = [data.coalesce() for data in dataset]
@@ -87,19 +97,20 @@ def run(config):
 
         # run experiment
         try:
-            preds, trues, final_test_run_name, training_figure \
-                = gfw.models.model_launcher(model,
-                                            train_loader,
-                                            test_loader,
-                                            number_of_features,
-                                            test_run_name_for_whole_dataset,
-                                            config.threshold,
-                                            feature_text,
-                                            config.training_parameters,
-                                            config.directories,
-                                            config.gnn_model_name,
-                                            split_num, figure,
-                                            final_test_loader)
+            preds, trues, final_test_run_name, training_figure, model, device \
+                = gfw.models.gcn_model_launcher(model,
+                                                train_loader,
+                                                test_loader,
+                                                number_of_features,
+                                                test_run_name_for_whole_dataset,
+                                                config.threshold,
+                                                feature_text,
+                                                config.training_parameters,
+                                                config.directories,
+                                                config.gnn_model_name,
+                                                split_num, figure,
+                                                final_test_loader,
+                                                config.force_device)
             final_test_run_name = f"{final_test_run_name}_{config.graph_type}_{config.batch_size}"
             feature_string = gfw.utils.create_feature_string(config)
             final_test_run_name = final_test_run_name + feature_string
@@ -121,7 +132,21 @@ def run(config):
         plt.close('all')
 
         # compute metrics
-        gfw.utils.compute_metrics(dffinal, final_test_run_name)
+        gfw.utils.compute_metrics(dffinal, final_test_run_name, config.selected_dataset)
+
+        # if XAI visualization is desired
+        if config.xai:
+            # selection of data instance to explain
+            data = dataset[config.data_instance]
+            explained_graph = to_networkx(data, node_attrs=['x'])
+    
+            for title, method in [('Integrated Gradients', 'ig'), ('Saliency', 'saliency')]:
+                edge_mask = gfw.utils.explain_gnn_model(method, data, device, model, target=0)
+                edge_mask_dict = gfw.utils.aggregate_edge_directions(edge_mask, data)
+                plt.figure(figsize=(10, 5))
+                plt.title(title)
+                gfw.utils.draw_explained_graph(g=explained_graph, edge_mask=edge_mask_dict, method=method,
+                                               test_run=final_test_run_name, data_instance=config.data_instance)
 
 
 def run_all_experiments(model_list, hidden_channel_list, threshold_list, graph_type_list,
@@ -136,8 +161,10 @@ def run_all_experiments(model_list, hidden_channel_list, threshold_list, graph_t
                     for graph_type in graph_type_list:
                         for batch_size in batch_size_list:
                             for add_degree_to_node_features in add_degree_list:
-                                if not node_embedding_method:
+                                if node_embedding_method == "False":
                                     config.node_embedding_parameters['compute_node_embeddings'] = False
+                                else:
+                                    config.node_embedding_parameters['compute_node_embeddings'] = True
                                 config.node_embedding_parameters['embedding_method'] = node_embedding_method
                                 config.add_degree_to_node_features = add_degree_to_node_features
                                 config.batch_size = batch_size
@@ -146,7 +173,9 @@ def run_all_experiments(model_list, hidden_channel_list, threshold_list, graph_t
                                 config.training_parameters["hidden_channels"] = hidden_channels
                                 config.gnn_model_name = model
 
-                                print(f"\nNow running model: {config.gnn_model_name}"
+                                print(f"\nNow analyzing data set: {config.selected_dataset}"
+                                      f"\nNow running model: {config.gnn_model_name}"
+                                      f"\nFeature set extracted from time series: {config.feature_set}"
                                       f"\ncompute node embeddings: "
                                       f"{config.node_embedding_parameters['compute_node_embeddings']}"
                                       f"\nnode embedding method: "
