@@ -52,6 +52,7 @@ class Config:
         self.target_variable = "Gender"     # used only with hcp_rs datasets
         self.unpack_hcp_rs_zipfiles_and_vstack_dataset = False  # used only with hcp_rs datasets
         self.disk_list = [1, 2, 3]  # used only with hcp_rs datasets
+        self.number_of_recordings = self.selected_dataset.split("_")[-1]    # used only with hcp_rs datasets
 
         # 2) define a list of models to test. Available models: ["GCN_kipf", "GCN", "GCNe", "SAGENET"]
         self.model_list = ["GCNe"]

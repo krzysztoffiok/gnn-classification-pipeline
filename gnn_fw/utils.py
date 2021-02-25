@@ -915,7 +915,7 @@ def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3]):
 
     # save path based on the real_number_of_recordings_in_a_single_recording_session
     number_of_recordings = str(final_matrices_dict[file_types_list[0]][variants_list[0]].shape[0])
-
+    print(f"The number of recordings used for example for data set name creation is: {number_of_recordings}.")
     dataset_save_path = f"{root_dir}_{number_of_recordings}"
     file_type_save_paths = [os.path.join(dataset_save_path, file_type) for file_type in file_types_list]
     filepahts_list = [dataset_save_path]
@@ -1029,7 +1029,7 @@ def load_dataset(config):
 
             # define y for hcp resting state datasets
             if config.selected_dataset.find("rs") != -1:
-                y_list = compute_hcp_rs_y_list()
+                y_list = compute_hcp_rs_y_list(number_of_recordings=config.number_of_recordings)
 
             # modify the dummy y in the whole dataset for actual values
             for num, data in enumerate(dataset):
