@@ -47,29 +47,30 @@ class Config:
     def __init__(self, gnn_model_name: str = "GCN", hidden_channels: int = 16, threshold: float = -2,
                  graph_type: str = "full", batch_size: int = 8, add_degree_to_node_features: bool = True,
                  compute_node_embeddings: bool = True, node_embedding_method: str = "NodeSketch"):
-        # 1) select the dataset. Possible datasets = "mutag", "uj_200", "hcp_17_51", "hcp_379_51", "hcp_rs_102"
-        # Warning: a CHANGE IN DATA SET LIKELY INVOLVES CHANGE IN NUMBER OF CLASSES
+        # 1) select the dataset. Possible datasets = "mutag", "uj_200", "hcp_17_51", "hcp_379_51", "hcp_rs_606"
         self.selected_dataset = "hcp_rs_606"
         self.target_variable = "Gender"     # used only with hcp_rs datasets
-        self.unpack_hcp_rs_zipfiles_and_vstack_dataset = False
+        self.unpack_hcp_rs_zipfiles_and_vstack_dataset = False  # used only with hcp_rs datasets
+        self.disk_list = [1, 2, 3]  # used only with hcp_rs datasets
 
-        # 2) define a list of models to test. Available models: ["GCN", "GNN", "GNNe", "SAGENET"]
+        # 2) define a list of models to test. Available models: ["GCN_kipf", "GCN", "GCNe", "SAGENET"]
         self.model_list = ["GCNe"]
 
         # 3) define a list of batch size values to test. Any integer will do, but the higher number the more RAM needed
-        self.batch_size_list = [2]  # 2 and 512 works and Feather, 38 and 512 works for NodeSketch, 19-1024
+        self.batch_size_list = [100, 500, 250, 125]  # 2 and 512 works and Feather,
+        # 38 and 512 works for NodeSketch, 19-1024
 
         # 4) define a list of type of graphs to use. Possible choices: "full" (all edges retained),
         # "maxst" maximum spanning tree, "minst" minimum spanning tree, "mixedst" edges obtained via
         # max and min spanning tree, "forest" another subset
-        self.graph_type_list = ["full"]
+        self.graph_type_list = ["maxst"]
 
         # 5) define a list of hidden channel number per GNN layer
-        self.hidden_channel_list = [16]   # best result was obtained with 3072
+        self.hidden_channel_list = [3072]   # best result was obtained with 3072
 
         # 6) define node_embedding_method_list to test. If one desires not to compute any node embeddings at all,
         # pass ["False"]
-        self.node_embedding_method_list = ["False"]
+        self.node_embedding_method_list = ["Feather"]
 
         # 7) define threshold_list to test
         self.threshold_list = [-2]
@@ -80,7 +81,7 @@ class Config:
         # 9) what features are to be computed from time series for each node
         # possible values are "empty", "ts_stats" (statistical parameters of time series from scipy.stats.describe)
         # ts_fresh (more statistical parameters), "mixed" (mix of ts_stats and ts_fresh)
-        self.feature_set = "empty"
+        self.feature_set = "mixed"
 
         # 10) number of folds for cross validation
         self.nfolds = 2
