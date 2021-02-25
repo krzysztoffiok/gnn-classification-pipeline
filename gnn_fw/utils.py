@@ -14,7 +14,7 @@ from torch_geometric.utils import convert as convert
 import random
 import networkx as nx
 import matplotlib.pyplot as plt
-import gnn_fw as gfw
+from . import config
 import karateclub
 from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn import metrics
@@ -23,7 +23,7 @@ from networkx.algorithms import tree
 from captum.attr import Saliency, IntegratedGradients
 from collections import defaultdict
 
-config = gfw.config.Config()
+config = config.Config()
 
 
 class NodeEmbeddingFunctions:
@@ -842,10 +842,9 @@ def decode_feature_string(feature_string):
     return final_feature_label
 
 
-def preprocess_raw_hcp_rs_zipfiles():
+def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3]):
     import zipfile
     from pathlib import Path
-    disk_list = [1, 2, 3]
     disk_tags_list = [f"disk{str(x)}" for x in disk_list]
     file_types_list = ["fc", "ts"]
     root_dir = "./source_data/hcp_rs"
@@ -997,7 +996,7 @@ def load_dataset(config):
     """
 
     if "mutag" in config.selected_dataset:
-        dataset = gfw.utils.load_mutag_dataset()
+        dataset = load_mutag_dataset()
         y_list = [x.y for x in dataset]
         dataset = [x for x in dataset]
         test_run_name = "mutag"
@@ -1008,20 +1007,20 @@ def load_dataset(config):
         if (config.selected_dataset.find("rs") != -1) or (config.selected_dataset == "uj_200"):
             if config.selected_dataset.find("rs") != -1:
                 if config.unpack_hcp_rs_zipfiles_and_vstack_dataset:
-                    preprocess_raw_hcp_rs_zipfiles()
+                    preprocess_raw_hcp_rs_zipfiles(disk_list=config.disk_list)
 
             print("Loading resting state data set")
             index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name, correlation_matrix,\
                 brain_parcellation = \
-                gfw.utils.preprocess_mri_resting_state_data(selected_dataset=config.selected_dataset,
-                                                            filenames=config.filenames,
-                                                            feature_set=config.feature_set,
-                                                            threshold=config.threshold,
-                                                            printout=config.printout)
+                preprocess_mri_resting_state_data(selected_dataset=config.selected_dataset,
+                                                  filenames=config.filenames,
+                                                  feature_set=config.feature_set,
+                                                  threshold=config.threshold,
+                                                  printout=config.printout)
             # create the dataset
-            dataset = gfw.utils.create_mri_dataset(correlation_matrix, index_of_source_nodes,
-                                                   index_of_target_nodes_dict, config.threshold,
-                                                   node_feature_dict, brain_parcellation, test_run_name)
+            dataset = create_mri_dataset(correlation_matrix, index_of_source_nodes,
+                                         index_of_target_nodes_dict, config.threshold,
+                                         node_feature_dict, brain_parcellation, test_run_name)
 
             # define y for Jagiellonian University resting state data
             if config.selected_dataset == "uj_200":
@@ -1045,12 +1044,12 @@ def load_dataset(config):
             for task in config.tasks_list:
                 index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name,\
                 correlation_matrix, brain_parcellation\
-                    = gfw.utils.preprocess_mri_task_based_data(task, config.selected_dataset, config.feature_set,
-                                                               config.threshold, printout=config.printout)
+                    = preprocess_mri_task_based_data(task, config.selected_dataset, config.feature_set,
+                                                     config.threshold, printout=config.printout)
                 # create the hcp_dataset
-                local_dataset, _ = gfw.utils.create_mri_dataset(correlation_matrix, index_of_source_nodes,
-                                                                index_of_target_nodes_dict, config.threshold,
-                                                                node_feature_dict, brain_parcellation, test_run_name)
+                local_dataset, _ = create_mri_dataset(correlation_matrix, index_of_source_nodes,
+                                                      index_of_target_nodes_dict, config.threshold,
+                                                      node_feature_dict, brain_parcellation, test_run_name)
                 for data in local_dataset:
                     dataset.append(data)
 
