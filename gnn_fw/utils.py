@@ -462,6 +462,7 @@ def create_data_loader(dataset, split, samples_for_final_test, config):
         print(f'Number of graphs in the current batch: {data.num_graphs}')
         print(data)
         print()
+        break
     return train_loader, test_loader, final_test_loader
 
 
@@ -641,7 +642,7 @@ def create_mri_dataset(correlation_matrix, index_of_source_nodes, index_of_targe
         return dataset
 
 
-def skf_splitter(nfolds, y_list, filenames):
+def skf_splitter(nfolds, y_list, dataset_name):
     """
     A function creating data splits to be used for cross validation. It uses a scikit-learn stratified cross validation
     splitter.
@@ -649,7 +650,7 @@ def skf_splitter(nfolds, y_list, filenames):
     :param y_list: a list of ground truth labels for the whole data set
     :return: a list of tuples which contain two lists i.e., lists of training and testing indexes
     """
-    if filenames[0].find("sum") == -1:
+    if dataset_name.find("hcp_rs") == -1:
         indexes = list(range(0, len(y_list)))
 
         y_list = np.array(y_list)
@@ -659,8 +660,8 @@ def skf_splitter(nfolds, y_list, filenames):
             splits.append((train, test))
 
     else:
-        print("Using simple splitter.")
-        # the hcp_102_lr and hcp_102_rl data sets use concatenations of recordings from two separate sessions
+        print("Using simple splitter for HCP RS data sets.")
+        # the HCP RS data sets use concatenations of recordings from two separate recording sessions
         # the idea is to train on the first session and test on the second session.
         train_indexes = list(range(0, int(len(y_list)/2)))
         test_indexes = list(range(int(len(y_list)/2), len(y_list)))
@@ -841,6 +842,153 @@ def decode_feature_string(feature_string):
     return final_feature_label
 
 
+def preprocess_raw_hcp_rs_zipfiles():
+    import zipfile
+    from pathlib import Path
+    disk_list = [1, 2, 3]
+    disk_tags_list = [f"disk{str(x)}" for x in disk_list]
+    file_types_list = ["fc", "ts"]
+    root_dir = "./source_data/hcp_rs"
+    variants_list = ["rest1", "rest2"]
+    recording_type_list = ["lr", "rl"]
+
+    def unzip_files(root_dir, file_types_list, disk_tags_list):
+        for file_type in file_types_list:
+            zip_files_list = [f"{file_type}_{disk_tag}.zip" for disk_tag in disk_tags_list]
+            zip_files_list = [os.path.join(root_dir, x) for x in zip_files_list]
+            for file_name in zip_files_list:
+                print(file_name)
+                extract_path = os.path.join(root_dir, Path(file_name).stem)
+                print(extract_path)
+                try:
+                    os.mkdir(extract_path)
+                except FileExistsError:
+                    pass
+                with zipfile.ZipFile(file_name,"r") as zip_ref:
+                    zip_ref.extractall(extract_path)
+
+    unzip_files(root_dir, file_types_list, disk_tags_list)
+
+    final_matrices_dict = dict()
+    for file_type in file_types_list:
+        folders_list = [f"{file_type}_{disk_tag}" for disk_tag in disk_tags_list]
+        print(folders_list)
+        file_type_matrices_dict = dict()
+        for folder in folders_list:
+            if file_type == "fc":
+                prefix = file_type
+                prefix2 = "corr_"
+            elif file_type == "ts":
+                prefix = "timeseries"
+                prefix2 = ""
+            dir_path = os.path.join(root_dir, folder, prefix)
+            print(dir_path)
+            variant_matrices_dict = dict()
+            for variant in variants_list:
+                recording_type_matrices_dict = dict()
+                for recording_type in recording_type_list:
+                    file_path = os.path.join(dir_path, f"{prefix2}{variant}_{recording_type}.npy")
+                    print(file_path)
+                    recording_type_matrices_dict[recording_type] = np.round(np.load(file_path, allow_pickle=True).astype(np.float16), 3)
+                # preliminary vstack: lr and rl
+                variant_matrices_dict[variant] = np.vstack(list(recording_type_matrices_dict.values()))
+            file_type_matrices_dict[folder] = variant_matrices_dict
+
+        # second vstack: disk1, disk2 ... diskn
+        final_variant_matrices_dict = dict()
+        for variant in variants_list:
+            matrices_list = list()
+            for disk in list(file_type_matrices_dict.keys()):
+                matrices_list.append(file_type_matrices_dict[disk][variant])
+            final_variant_matrices_dict[variant] = np.vstack(matrices_list)
+
+        # create final dictionary with separate rest1 and rest2 matrices
+        final_matrices_dict[file_type] = final_variant_matrices_dict
+
+    # Vstacking rest1 and rest2 together because the pipeline will compute all features for all subjects and
+    # they will be divided into training and test later based on the real number of subjects equal to rest1.shape[0]
+    super_final_matrix_dict = dict()
+    for file_type in file_types_list:
+        matrices_list = list()
+        for variant in variants_list:
+            matrices_list.append(final_matrices_dict[file_type][variant])
+        super_final_matrix_dict[file_type] = np.vstack(matrices_list)
+
+    # save path based on the real_number_of_recordings_in_a_single_recording_session
+    number_of_recordings = str(final_matrices_dict[file_types_list[0]][variants_list[0]].shape[0])
+
+    dataset_save_path = f"{root_dir}_{number_of_recordings}"
+    file_type_save_paths = [os.path.join(dataset_save_path, file_type) for file_type in file_types_list]
+    filepahts_list = [dataset_save_path]
+    filepahts_list.extend(file_type_save_paths)
+    print(filepahts_list)
+
+    # create dirs
+    for fiilepath in filepahts_list:
+        try:
+            os.makedirs(fiilepath)
+        except FileExistsError:
+            pass
+
+    # save numpy files
+    for file_type in file_types_list:
+        file_save_path = os.path.join(dataset_save_path, file_type, "all.npy")
+        print(file_save_path)
+        np.save(file_save_path, super_final_matrix_dict[file_type])
+
+
+def compute_hcp_rs_y_list(target_variable="Gender", number_of_recordings=606):
+    import zipfile
+    from pathlib import Path
+    root_dir = "./source_data/hcp_rs"
+    dataset_save_path = f"{root_dir}_{str(number_of_recordings)}"
+    y_list_filename = os.path.join(dataset_save_path, f"{target_variable}_y_list.pkl")
+
+    if os.path.isfile(y_list_filename):
+        print('The y_list was already created, only loading data.')
+        with open(y_list_filename, "rb") as fp:
+            y_list = pickle.load(fp)
+
+    else:
+        print("Computing y_list.")
+        if target_variable == "Gender":
+            disk_list = [1, 2, 3]
+            disk_tags_list = [f"disk{str(x)}" for x in disk_list]
+            subIDname = 'subjectsID'
+
+            # create subject ID paths
+            subID_name_list = [f"{subIDname}_{disk}.npy" for disk in disk_tags_list]
+            subID_paths = [os.path.join(root_dir, subID_path) for subID_path in subID_name_list]
+            print(subID_paths)
+
+            # read the file with target values
+            csv_file = pd.read_csv(os.path.join(root_dir, "HCPData.csv"))
+
+            # create y_list
+            y_list = list()
+            for subID_path in subID_paths:
+                subID_list = np.load(subID_path).tolist()
+                actual_file = csv_file[csv_file['Subject'].isin([int(x) for x in list(subID_list)])]
+                y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
+                # we are extending twice by the same list because the first extend refers to lr recording,
+                # second rl recording
+                y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
+
+            # the final extend of itself because the pipeline will compute all features for all subjects
+            # for both rest1 and rest2 recording sessions and they will be divided into training and test
+            # later based on the real number of subjects
+            y_list.extend(y_list)
+
+            # save the computed y_list to disk
+            with open(y_list_filename, "wb") as fp:
+                pickle.dump(y_list, fp)
+        else:
+            print("Target variables other than 'Gender' are not yet supported.")
+            quit()
+
+    return y_list
+
+
 def load_dataset(config):
     """
     A function to load data sets (and often compute some elements)
@@ -858,6 +1006,10 @@ def load_dataset(config):
     elif (config.selected_dataset.find("hcp") != -1) or (config.selected_dataset == "uj_200"):
         # if resting state dataset
         if (config.selected_dataset.find("rs") != -1) or (config.selected_dataset == "uj_200"):
+            if config.selected_dataset.find("rs") != -1:
+                if config.unpack_hcp_rs_zipfiles_and_vstack_dataset:
+                    preprocess_raw_hcp_rs_zipfiles()
+
             print("Loading resting state data set")
             index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name, correlation_matrix,\
                 brain_parcellation = \
@@ -878,17 +1030,7 @@ def load_dataset(config):
 
             # define y for hcp resting state datasets
             if config.selected_dataset.find("rs") != -1:
-                subject_id = np.load(os.path.join(config.directories['source data'], config.selected_dataset,
-                                                  config.filenames[2]))
-                csv_file = pd.read_csv(os.path.join(config.directories['source data'], config.selected_dataset,
-                                                    config.filenames[3]))
-                actual_file = csv_file[csv_file['Subject'].isin([int(x) for x in list(subject_id)])]
-
-                # encode the target:Gender into 0 and 1
-                y_list = actual_file['Gender'].astype("category").cat.codes.tolist()
-                # if both recording sessions rest1 and rest2 are analyzed at the same time
-                if config.filenames[0].find("sum") != -1:
-                    y_list.extend(y_list)
+                y_list = compute_hcp_rs_y_list()
 
             # modify the dummy y in the whole dataset for actual values
             for num, data in enumerate(dataset):

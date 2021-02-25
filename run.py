@@ -71,7 +71,7 @@ def run(config):
 
     # no matter which dataset, use the same splitter. Splits is a list (len=nfolds)
     # of tuples(train_indexes, test_indexes)
-    splits = gfw.utils.skf_splitter(nfolds=config.nfolds, y_list=y_list, filenames=config.filenames)
+    splits = gfw.utils.skf_splitter(nfolds=config.nfolds, y_list=y_list, dataset_name=config.selected_dataset)
 
     # this ensures that there are no duplicated edges
     dataset = [data.coalesce() for data in dataset]

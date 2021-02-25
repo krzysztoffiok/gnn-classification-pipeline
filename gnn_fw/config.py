@@ -49,7 +49,9 @@ class Config:
                  compute_node_embeddings: bool = True, node_embedding_method: str = "NodeSketch"):
         # 1) select the dataset. Possible datasets = "mutag", "uj_200", "hcp_17_51", "hcp_379_51", "hcp_rs_102"
         # Warning: a CHANGE IN DATA SET LIKELY INVOLVES CHANGE IN NUMBER OF CLASSES
-        self.selected_dataset = "hcp_rs_lr_102"
+        self.selected_dataset = "hcp_rs_606"
+        self.target_variable = "Gender"     # used only with hcp_rs datasets
+        self.unpack_hcp_rs_zipfiles_and_vstack_dataset = False
 
         # 2) define a list of models to test. Available models: ["GCN", "GNN", "GNNe", "SAGENET"]
         self.model_list = ["GCNe"]
@@ -60,14 +62,14 @@ class Config:
         # 4) define a list of type of graphs to use. Possible choices: "full" (all edges retained),
         # "maxst" maximum spanning tree, "minst" minimum spanning tree, "mixedst" edges obtained via
         # max and min spanning tree, "forest" another subset
-        self.graph_type_list = ["maxst"]
+        self.graph_type_list = ["full"]
 
         # 5) define a list of hidden channel number per GNN layer
         self.hidden_channel_list = [16]   # best result was obtained with 3072
 
         # 6) define node_embedding_method_list to test. If one desires not to compute any node embeddings at all,
         # pass ["False"]
-        self.node_embedding_method_list = ["NodeSketch"]
+        self.node_embedding_method_list = ["False"]
 
         # 7) define threshold_list to test
         self.threshold_list = [-2]
@@ -78,7 +80,7 @@ class Config:
         # 9) what features are to be computed from time series for each node
         # possible values are "empty", "ts_stats" (statistical parameters of time series from scipy.stats.describe)
         # ts_fresh (more statistical parameters), "mixed" (mix of ts_stats and ts_fresh)
-        self.feature_set = "mixed"
+        self.feature_set = "empty"
 
         # 10) number of folds for cross validation
         self.nfolds = 2
@@ -93,29 +95,25 @@ class Config:
 
         # if explainable AI is to be used for creating instance-level visualizations. data_instance is the number of
         # instance to be visualized
-        self.xai = True
+        self.xai = False
         self.data_instance = 5
 
         # if a password is provided and gfw.utils.send_notification_email function is configured with your email, you
         # will receive a notification email every time the framework finishes computation (if duration of experiment
         # took longer than 2 minutes)
-        self.password = "QWERTy.123"
+        self.password = ""
 
         # do not touch below this line. All other configuration parameters are defined automatically.
         # number of classes
         if self.selected_dataset in ["hcp_379_51", "hcp_17_51"]:
             self.number_of_classes = 7
-        elif self.selected_dataset in ["uj_200", "mutag", "hcp_rs_102", "hcp_rs_rl_102", "hcp_rs_lr_102"]:
+        elif self.selected_dataset in ["uj_200", "mutag", "hcp_rs_606"]:
             self.number_of_classes = 2
 
         if self.selected_dataset == "uj_200":
             self.filenames = ["fmri_corr.npy", "fmri_ts.npy"]
-        elif self.selected_dataset == "hcp_rs_lr_102":
-            self.filenames = ["fc/corr_sum_lr.npy", "timeseries/sum_lr.npy", "subjectsID.npy", "HCPData.csv"]
-        elif self.selected_dataset == "hcp_rs_rl_102":
-            self.filenames = ["fc/corr_sum_rl.npy", "timeseries/sum_rl.npy", "subjectsID.npy", "HCPData.csv"]
-        elif self.selected_dataset == "hcp_rs_102":
-            self.filenames = ["fc/corr_rest1_lr.npy", "timeseries/rest1_lr.npy", "subjectsID.npy", "HCPData.csv"]
+        elif self.selected_dataset == "hcp_rs_606":
+            self.filenames = ["fc/all.npy", "ts/all.npy", f"{self.target_variable}_y_list.pkl"]
         # if the selected dataset is of type hcp functional, there can be many tasks and the below names are needed
         self.tasks_list = ['wm', 'gambling', 'motor', 'language', 'social', 'relational', 'emotion']
 
