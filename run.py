@@ -80,6 +80,26 @@ def run(config):
     number_of_features, feature_text = gfw.utils.feature_number_and_names(dataset, config.feature_set,
                                                                           config.node_embedding_parameters)
 
+    # import torch_geometric
+    # from torch_geometric.data import Data
+    # for data in dataset:
+    #     y = torch.tensor([data.y])
+    #     data.y = y
+    #     edge_attr = data.edge_attr
+    #     num_nodes = data.num_nodes
+    #     # print(type(data.edge_index))
+    #     transform = torch_geometric.transforms.ToSparseTensor()
+    #     # for key, item in data:
+    #         # print(type(data[key]), key)
+    #     data = transform(data)
+    #     data.edge_index = data.adj_t
+    #     # print(type(data.adj_t))
+    # #     # edge_index = data.edge_index
+    # #     # print(type(edge_index))
+    # #     new_dataset.append(Data(x=data.x, y=data.y, edge_index=data.edge_index, edge_attr=data.edge_attr, num_nodes=num_nodes))
+    # #
+    # # dataset = [data for data in new_dataset]
+
     dffinal = pd.DataFrame()
     figure = plt.figure(figsize=(20, 20), dpi=150)
     oom_error = False
@@ -98,19 +118,22 @@ def run(config):
         # run experiment
         try:
             preds, trues, final_test_run_name, training_figure, model, device \
-                = gfw.models.gcn_model_launcher(model,
-                                                train_loader,
-                                                test_loader,
-                                                number_of_features,
-                                                test_run_name_for_whole_dataset,
-                                                config.threshold,
-                                                feature_text,
-                                                config.training_parameters,
-                                                config.directories,
-                                                config.gnn_model_name,
-                                                split_num, figure,
-                                                final_test_loader,
-                                                config.force_device)
+                = gfw.models.gcn_model_launcher(model=model,
+                                                train_loader=train_loader,
+                                                test_loader=test_loader,
+                                                number_of_features=number_of_features,
+                                                test_run_name=test_run_name_for_whole_dataset,
+                                                threshold=config.threshold,
+                                                feature_text=feature_text,
+                                                training_parameters=config.training_parameters,
+                                                directories=config.directories,
+                                                gnn_model_name=config.gnn_model_name,
+                                                split_num=split_num,
+                                                figure=figure,
+                                                final_test_loader=final_test_loader,
+                                                force_device=config.force_device,
+                                                dataset_name=config.selected_dataset,
+                                                batch_size=config.batch_size)
             final_test_run_name = f"{final_test_run_name}_{config.graph_type}_{config.batch_size}"
             feature_string = gfw.utils.create_feature_string(config)
             final_test_run_name = final_test_run_name + feature_string
@@ -128,7 +151,8 @@ def run(config):
             break
 
     if not oom_error:
-        plt.savefig(f"{config.directories['training visualizations']}/{final_test_run_name}.png")
+        plt.savefig(f"{config.directories['training visualizations']}/{config.selected_dataset}/"
+                    f"{final_test_run_name}.png")
         plt.close('all')
 
         # compute metrics

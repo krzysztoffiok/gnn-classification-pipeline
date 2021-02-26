@@ -29,8 +29,9 @@ def model_selector(model_name):
 
 
 def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
-                   test_run_name, threshold, feature_text, training_parameters,
-                   directories, gnn_model_name, split_num, figure, final_test_loader, force_device):
+                       test_run_name, threshold, feature_text, training_parameters,
+                       directories, gnn_model_name, split_num, figure, final_test_loader, force_device,
+                       dataset_name, batch_size):
     """
     A common model lanucher for all implemented models of type GCN (Graph Convolutional Models)
     :param model: not instantiated model from model_selector
@@ -52,6 +53,8 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
     :param final_test_loader: final test (holdout set) data loader. Usually created by gfw.utils.create_data_loader
      function
     :param force_device: str. Option to force the selection of device which will be used for computations.
+    :param dataset_name: str. Name of the selected dataset from config.selected_dataset
+    :param batch_size: int. Batch size (number of graph instances fed to the network at the same time)
     :return: preds, trues: predicted and ground truth labels of the data instances from the
      holdout set (final test loader)
     save_string: a long string containing encoded information regarding the test run allowing to identify the
@@ -152,7 +155,8 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
         # hand made save best model
         if train_acc > best_acc:
             best_acc = train_acc
-            model_save_path = f"{directories['training visualizations']}/{'_'.join([str(x) for x in test_run_name])}" \
+            model_save_path = f"{directories['training visualizations']}/{dataset_name}/" \
+                              f"{'_'.join([str(x) for x in test_run_name])}" \
                               f"_best-model-parameters.pt"
             torch.save(model.state_dict(), model_save_path)
 
@@ -167,14 +171,16 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
     plt.plot([x for x in range(len(test_acc_list))], test_acc_list, label=f"test_{split_num}")
     plt.legend()
 
-    plt.title(f"{model.__class__.__name__}, hidden: {training_parameters['hidden_channels']},"
+    plt.title(f"{model.__class__.__name__},"
+              f" hidden: {training_parameters['hidden_channels']},"
+              f" batch_size: {batch_size}"
               f" lr: {training_parameters['lr']}, threshold: {threshold},"
               f" node_f: {feature_text}")
 
     save_string = '_'.join([str(x) for x in test_run_name])
 
     # save scheduler info
-    with open(f"{directories['training visualizations']}/{save_string}_"
+    with open(f"{directories['training visualizations']}/{dataset_name}/{save_string}_"
               f"scheduler_{split_num}.pkl", 'wb') as handle:
         pickle.dump(ssd, handle, protocol=pickle.HIGHEST_PROTOCOL)
 

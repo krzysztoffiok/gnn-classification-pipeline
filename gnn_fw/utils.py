@@ -22,6 +22,7 @@ from scipy.stats import wasserstein_distance
 from networkx.algorithms import tree
 from captum.attr import Saliency, IntegratedGradients
 from collections import defaultdict
+from torch_geometric.data import InMemoryDataset
 
 config = config.Config()
 
@@ -1067,6 +1068,35 @@ def load_dataset(config):
     return dataset, test_run_name_for_whole_dataset, y_list, test_run_name
 
 
+# class PTGDataset(InMemoryDataset):
+#     def __init__(self, list_dataset, root="./", transform=None, pre_transform=None):
+#         self.list_dataset = list_dataset
+#         super(PTGDataset, self).__init__(root, transform, pre_transform)
+#         # self.data, self.slices = torch.load(self.processed_paths[0])
+#
+#
+#     @property
+#     def raw_file_names(self):
+#         return []
+#
+#     @property
+#     def processed_file_names(self):
+#         return ['data.pt']
+#
+#     def process(self):
+#         # Read data into huge `Data` list.
+#         data_list = self.list_dataset
+#
+#         if self.pre_filter is not None:
+#             data_list = [data for data in data_list if self.pre_filter(data)]
+#
+#         if self.pre_transform is not None:
+#             data_list = [self.pre_transform(data) for data in data_list]
+#
+#         data, slices = self.collate(data_list)
+#         torch.save((data, slices), self.processed_paths[0])
+
+
 # below a set of functions adopted (and modified) from:
 # https://colab.research.google.com/drive/1fLJbFPz0yMCQg81DdCP5I8jXw9LoggKO?usp=sharing
 # a pytorch geometric example notebook 6
@@ -1133,7 +1163,7 @@ from pytorch.geometric
 """
 
 
-from torch_geometric.data import InMemoryDataset
+
 
 
 class COVIDDataset(InMemoryDataset):

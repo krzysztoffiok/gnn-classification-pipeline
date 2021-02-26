@@ -58,16 +58,17 @@ class Config:
         self.model_list = ["GCNe"]
 
         # 3) define a list of batch size values to test. Any integer will do, but the higher number the more RAM needed
-        self.batch_size_list = [100, 500, 250, 125]  # 2 and 512 works and Feather,
-        # 38 and 512 works for NodeSketch, 19-1024
+        self.batch_size_list = [16, 8, 4, 2]  # 2 and 512 works and Feather full,
+        # 38 and 512 works for NodeSketch, 19-1024. For feather maxst 125 and 3072
 
         # 4) define a list of type of graphs to use. Possible choices: "full" (all edges retained),
         # "maxst" maximum spanning tree, "minst" minimum spanning tree, "mixedst" edges obtained via
         # max and min spanning tree, "forest" another subset
-        self.graph_type_list = ["maxst"]
+        self.graph_type_list = ["full"]
 
         # 5) define a list of hidden channel number per GNN layer
-        self.hidden_channel_list = [3072]   # best result was obtained with 3072
+        self.hidden_channel_list = [128]   # best result was obtained with 3072.
+        # with maxst value of 512 caused to overfit
 
         # 6) define node_embedding_method_list to test. If one desires not to compute any node embeddings at all,
         # pass ["False"]
@@ -135,8 +136,8 @@ class Config:
         # parameters of training. Number of classes must match the selected dataset!
         self.training_parameters = {"number_of_classes": self.number_of_classes,
                                     "hidden_channels": hidden_channels,
-                                    "lr": 1e-3,     # for mutag: 1e-2, for hcp_17_51 1e-4
-                                    "epochs": 2,
+                                    "lr": 0.0005,     # for mutag: 1e-2, for hcp_17_51 1e-4
+                                    "epochs": 1200,
                                     "min_lr": 0.00005,     # for mutag: 1e-4, for hcp_17_51 1e-6
                                     "patience": 40,
                                     "threshold": 1e-5,
