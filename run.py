@@ -79,27 +79,6 @@ def run(config):
     # define number of features and names
     number_of_features, feature_text = gfw.utils.feature_number_and_names(dataset, config.feature_set,
                                                                           config.node_embedding_parameters)
-
-    # import torch_geometric
-    # from torch_geometric.data import Data
-    # for data in dataset:
-    #     y = torch.tensor([data.y])
-    #     data.y = y
-    #     edge_attr = data.edge_attr
-    #     num_nodes = data.num_nodes
-    #     # print(type(data.edge_index))
-    #     transform = torch_geometric.transforms.ToSparseTensor()
-    #     # for key, item in data:
-    #         # print(type(data[key]), key)
-    #     data = transform(data)
-    #     data.edge_index = data.adj_t
-    #     # print(type(data.adj_t))
-    # #     # edge_index = data.edge_index
-    # #     # print(type(edge_index))
-    # #     new_dataset.append(Data(x=data.x, y=data.y, edge_index=data.edge_index, edge_attr=data.edge_attr, num_nodes=num_nodes))
-    # #
-    # # dataset = [data for data in new_dataset]
-
     dffinal = pd.DataFrame()
     figure = plt.figure(figsize=(20, 20), dpi=150)
     oom_error = False

@@ -1048,9 +1048,9 @@ def load_dataset(config):
                     = preprocess_mri_task_based_data(task, config.selected_dataset, config.feature_set,
                                                      config.threshold, printout=config.printout)
                 # create the hcp_dataset
-                local_dataset, _ = create_mri_dataset(correlation_matrix, index_of_source_nodes,
-                                                      index_of_target_nodes_dict, config.threshold,
-                                                      node_feature_dict, brain_parcellation, test_run_name)
+                local_dataset = create_mri_dataset(correlation_matrix, index_of_source_nodes,
+                                                   index_of_target_nodes_dict, config.threshold,
+                                                   node_feature_dict, brain_parcellation, test_run_name)
                 for data in local_dataset:
                     dataset.append(data)
 
@@ -1161,9 +1161,6 @@ Below is a very preliminary code from Reza Davahli to create an example data set
 It might be useful because it shows a working example of how to create an instance of "InMemoryDataset" object
 from pytorch.geometric
 """
-
-
-
 
 
 class COVIDDataset(InMemoryDataset):

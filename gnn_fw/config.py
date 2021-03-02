@@ -31,18 +31,6 @@ class Config:
 
     More configuration options are available below, but attending them is not obligatory.
     """
-    # name of folders for the data storage of the framework.
-    directories = {"source data": "source_data",
-                   "datasets": "datasets",
-                   "graph visualizations": "graph_visualizations",
-                   "training visualizations": "training_visualizations"}
-
-    # make sure paths are created when the experiment is started
-    for d in directories.values():
-        try:
-            os.makedirs(d)
-        except FileExistsError:
-            pass
 
     def __init__(self, gnn_model_name: str = "GCN", hidden_channels: int = 16, threshold: float = -2,
                  graph_type: str = "full", batch_size: int = 8, add_degree_to_node_features: bool = True,
@@ -55,24 +43,24 @@ class Config:
         self.number_of_recordings = self.selected_dataset.split("_")[-1]    # used only with hcp_rs datasets
 
         # 2) define a list of models to test. Available models: ["GCN_kipf", "GCN", "GCNe", "SAGENET"]
-        self.model_list = ["GCNe"]
+        self.model_list = ["GCNe", "GCNse", "GCN"]
 
         # 3) define a list of batch size values to test. Any integer will do, but the higher number the more RAM needed
-        self.batch_size_list = [16, 8, 4, 2]  # 2 and 512 works and Feather full,
+        self.batch_size_list = [400, 256, 128, 96, 64, 48, 32, 24, 16, 8, 4, 2]  # 2 and 512 works and Feather full,
         # 38 and 512 works for NodeSketch, 19-1024. For feather maxst 125 and 3072
 
         # 4) define a list of type of graphs to use. Possible choices: "full" (all edges retained),
         # "maxst" maximum spanning tree, "minst" minimum spanning tree, "mixedst" edges obtained via
         # max and min spanning tree, "forest" another subset
-        self.graph_type_list = ["full"]
+        self.graph_type_list = ["full", "maxst"]
 
         # 5) define a list of hidden channel number per GNN layer
-        self.hidden_channel_list = [128]   # best result was obtained with 3072.
+        self.hidden_channel_list = [2048, 1536, 1024, 768, 512, 256, 128]   # best result was obtained with 3072.
         # with maxst value of 512 caused to overfit
 
         # 6) define node_embedding_method_list to test. If one desires not to compute any node embeddings at all,
         # pass ["False"]
-        self.node_embedding_method_list = ["Feather"]
+        self.node_embedding_method_list = ["Feather", "NodeSketch"]
 
         # 7) define threshold_list to test
         self.threshold_list = [-2]
@@ -104,7 +92,7 @@ class Config:
         # if a password is provided and gfw.utils.send_notification_email function is configured with your email, you
         # will receive a notification email every time the framework finishes computation (if duration of experiment
         # took longer than 2 minutes)
-        self.password = ""
+        self.password = "QWERTy.123"
 
         # do not touch below this line. All other configuration parameters are defined automatically.
         # number of classes
@@ -145,3 +133,18 @@ class Config:
                                     "threshold_mode": "rel",
                                     "factor": 0.5
                                     }
+
+        # make sure paths are created when the experiment is started
+        # name of folders for the data storage of the framework.
+        self.directories = {"source data": "source_data",
+                            "datasets": "datasets",
+                            "graph visualizations": "graph_visualizations",
+                            "training visualizations": "training_visualizations"}
+
+        self.directories[''] = os.path.join(self.directories['training visualizations'], self.selected_dataset)
+
+        for d in self.directories.values():
+            try:
+                os.makedirs(d)
+            except FileExistsError:
+                pass

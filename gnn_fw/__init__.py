@@ -1,4 +1,4 @@
-import gnn_fw.config
-import gnn_fw.utils
-import gnn_fw.models
+from . import config
+from . import utils
+from . import models
 __all__ = ['config', 'utils', 'models']

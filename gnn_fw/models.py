@@ -24,6 +24,8 @@ def model_selector(model_name):
                        "GCN": GCN,
                        "GCNe": GCNe,
                        "SAGENET": SAGENET,
+                       "GCNs": GCNs,
+                       "GCNse": GCNse
                        }
     return model_name_dict[model_name]
 
@@ -153,8 +155,8 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
               f' LR: {ssd[epoch]["_last_lr"][0]:.6f}')
 
         # hand made save best model
-        if train_acc > best_acc:
-            best_acc = train_acc
+        if test_acc > best_acc:
+            best_acc = test_acc
             model_save_path = f"{directories['training visualizations']}/{dataset_name}/" \
                               f"{'_'.join([str(x) for x in test_run_name])}" \
                               f"_best-model-parameters.pt"
@@ -287,6 +289,48 @@ class GCN(torch.nn.Module):
         x = self.conv2(x, edge_index)
         x = x.relu()
         x = self.conv3(x, edge_index)
+
+        x = global_mean_pool(x, batch)
+
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.lin(x)
+
+        return x
+
+
+class GCNs(torch.nn.Module):
+    def __init__(self, hidden_channels, number_of_features, number_of_classes):
+        super(GCNs, self).__init__()
+        torch.manual_seed(12345)
+        self.conv1 = GraphConv(number_of_features, hidden_channels)
+        self.conv2 = GraphConv(hidden_channels, hidden_channels)
+        self.lin = Linear(hidden_channels, number_of_classes)
+
+    def forward(self, x, edge_index, batch):
+        x = self.conv1(x, edge_index)
+        x = x.relu()
+        x = self.conv2(x, edge_index)
+
+        x = global_mean_pool(x, batch)
+
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.lin(x)
+
+        return x
+
+
+class GCNse(torch.nn.Module):
+    def __init__(self, hidden_channels, number_of_features, number_of_classes):
+        super(GCNse, self).__init__()
+        torch.manual_seed(12345)
+        self.conv1 = GraphConv(number_of_features, hidden_channels)
+        self.conv2 = GraphConv(hidden_channels, hidden_channels)
+        self.lin = Linear(hidden_channels, number_of_classes)
+
+    def forward(self, x, edge_index, edge_attr, batch):
+        x = self.conv1(x, edge_index, edge_attr)
+        x = x.relu()
+        x = self.conv2(x, edge_index, edge_attr)
 
         x = global_mean_pool(x, batch)
 
