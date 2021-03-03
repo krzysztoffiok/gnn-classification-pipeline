@@ -673,28 +673,6 @@ def skf_splitter(nfolds, y_list, dataset_name):
     return splits
 
 
-# an example of random walk
-# def get_random_walk(graph: nx.Graph, node: int, n_steps: int = 4):
-#     """ Given a graph and a node,
-#         return a random walk starting from the node
-#     """
-#     local_path = [str(node), ]
-#     target_node = node
-#     for _ in range(n_steps):
-#         neighbors = list(nx.all_neighbors(graph, target_node))
-#         target_node = random.choice(neighbors)
-#         local_path.append(str(target_node))
-#     return local_path
-
-
-# walk_paths = []
-# for node in G.nodes():
-#     for _ in range(10):
-#         walk_paths.append(get_random_walk(G, node))
-#
-# walk_paths[0]
-
-
 def compute_metrics(df_res, test_run_name, dataset_name):
     """
     A function which computes various classification metrics from a precomputed pandas data frame (in .xlsx format)

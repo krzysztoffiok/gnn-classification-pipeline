@@ -30,7 +30,7 @@ def model_selector(model_name):
     return model_name_dict[model_name]
 
 
-def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
+def gcn_model_launcher(model, train_loader, validate_loader, number_of_features,
                        test_run_name, threshold, feature_text, training_parameters,
                        directories, gnn_model_name, split_num, figure, final_test_loader, force_device,
                        dataset_name, batch_size):
@@ -38,7 +38,7 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
     A common model lanucher for all implemented models of type GCN (Graph Convolutional Models)
     :param model: not instantiated model from model_selector
     :param train_loader: training data loader. Usually created by gfw.utils.create_data_loader function
-    :param test_loader: test data loader. Usually created by gfw.utils.create_data_loader function
+    :param validate_loader: test data loader. Usually created by gfw.utils.create_data_loader function
     :param number_of_features: number of node features fed to the model per node. Usually inferred automatically from
     an example data instance from the dataset
     :param test_run_name: human-given name of the test run. Usually, automatically created from various parameters
@@ -110,7 +110,7 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
             optimizer.step()  # Update parameters based on gradients.
             optimizer.zero_grad()  # Clear gradients.
 
-    def test(loader):
+    def evaluate(loader, model):
         model.eval()
         correct = 0
         for data in loader:  # Iterate in batches over the training/test dataset.
@@ -139,24 +139,24 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
         return preds, trues
 
     train_acc_list = list()
-    test_acc_list = list()
+    validate_acc_list = list()
     ssd = dict()
     best_acc = 0
 
     for epoch in range(training_parameters['epochs']):
         train(training_parameters['use_edges'], train_loader)
-        train_acc = test(train_loader)
-        test_acc = test(test_loader)
+        train_acc = evaluate(train_loader, model)
+        validate_acc = evaluate(validate_loader, model)
         train_acc_list.append(train_acc)
-        test_acc_list.append(test_acc)
-        scheduler.step(test_acc)
+        validate_acc_list.append(validate_acc)
+        scheduler.step(validate_acc)
         ssd[epoch] = scheduler.state_dict()
-        print(f'Epoch: {epoch:03d}, Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f},'
+        print(f'Epoch: {epoch:03d}, Train Acc: {train_acc:.4f}, Test Acc: {validate_acc:.4f},'
               f' LR: {ssd[epoch]["_last_lr"][0]:.6f}')
 
         # hand made save best model
-        if test_acc > best_acc:
-            best_acc = test_acc
+        if validate_acc > best_acc:
+            best_acc = validate_acc
             model_save_path = f"{directories['training visualizations']}/{dataset_name}/" \
                               f"{'_'.join([str(x) for x in test_run_name])}" \
                               f"_best-model-parameters.pt"
@@ -170,7 +170,7 @@ def gcn_model_launcher(model, train_loader, test_loader, number_of_features,
             break
 
     plt.plot([x for x in range(len(train_acc_list))], train_acc_list, label=f"train_{split_num}")
-    plt.plot([x for x in range(len(test_acc_list))], test_acc_list, label=f"test_{split_num}")
+    plt.plot([x for x in range(len(validate_acc_list))], validate_acc_list, label=f"test_{split_num}")
     plt.legend()
 
     plt.title(f"{model.__class__.__name__},"

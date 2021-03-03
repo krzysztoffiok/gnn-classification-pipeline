@@ -84,7 +84,7 @@ def run(config):
     oom_error = False
     for split_num, split in enumerate(splits):
         # prepare dataset for training
-        train_loader, test_loader, final_test_loader = \
+        train_loader, validate_loader, final_test_loader = \
             gfw.utils.create_data_loader(dataset, split, config.training_parameters["samples_for_final_test"], config)
 
         # select a GNN model
@@ -99,7 +99,7 @@ def run(config):
             preds, trues, final_test_run_name, training_figure, model, device \
                 = gfw.models.gcn_model_launcher(model=model,
                                                 train_loader=train_loader,
-                                                test_loader=test_loader,
+                                                validate_loader=validate_loader,
                                                 number_of_features=number_of_features,
                                                 test_run_name=test_run_name_for_whole_dataset,
                                                 threshold=config.threshold,
