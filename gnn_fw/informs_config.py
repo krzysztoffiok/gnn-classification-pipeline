@@ -37,29 +37,31 @@ class Config:
                  graph_type: str = "full", batch_size: int = 8, add_degree_to_node_features: bool = True,
                  compute_node_embeddings: bool = True, node_embedding_method: str = "NodeSketch"):
         # 1) select the dataset. Possible datasets = "mutag", "uj_200", "hcp_17_51", "hcp_379_51", "hcp_rs_606"
-        self.selected_dataset = "hcp_rs_200"  #"hcp_rs_379"
+        self.selected_dataset = "hcp_17_51"  #"hcp_rs_606"
         self.target_variable = "Gender"     # used only with hcp_rs datasets
-        self.unpack_hcp_rs_zipfiles_and_vstack_dataset = False  # used only with hcp_rs datasets,
-                                    # provide number of nodes/brain regions for example 200
-        self.disk_list = [1]  # used only with hcp_rs datasets  [1,2,3]
+        self.unpack_hcp_rs_zipfiles_and_vstack_dataset = False  # used only with hcp_rs datasets
+        self.disk_list = [1, 2, 3]  # used only with hcp_rs datasets
+        self.number_of_recordings = self.selected_dataset.split("_")[-1]    # used only with hcp_rs datasets
 
-        # 2) define a list of models to test. Available models are available in models.py
-        self.model_list = ["GAT"]
+        # 2) define a list of models to test. Available models: ["GCN_kipf", "GCN", "GCNe", "SAGENET"]
+        self.model_list = ["GCN", "GCNe", "GCN2e"]
 
         # 3) define a list of batch size values to test. Any integer will do, but the higher number the more RAM needed
-        self.batch_size_list = [4]
+        self.batch_size_list = [4, 16, 32, 48, 64]  # 2 and 512 works and Feather full,
+        # 38 and 512 works for NodeSketch, 19-1024. For feather maxst 125 and 3072
 
         # 4) define a list of type of graphs to use. Possible choices: "full" (all edges retained),
         # "maxst" maximum spanning tree, "minst" minimum spanning tree, "mixedst" edges obtained via
         # max and min spanning tree, "forest" another subset
-        self.graph_type_list = ["maxst"]
+        self.graph_type_list = ["full"]
 
         # 5) define a list of hidden channel number per GNN layer
-        self.hidden_channel_list = [92]
+        self.hidden_channel_list = [32, 64, 112, 256]   # best result was obtained with 3072.
+        # with maxst value of 512 caused to overfit
 
         # 6) define node_embedding_method_list to test. If one desires not to compute any node embeddings at all,
         # pass ["False"]
-        self.node_embedding_method_list = ["NodeSketch"]
+        self.node_embedding_method_list = ["False", "DeepWalk", "Node2Vec", "NodeSketch", "Feather"]
 
         # 7) define threshold_list to test
         self.threshold_list = [-2]
@@ -70,13 +72,13 @@ class Config:
         # 9) what features are to be computed from time series for each node
         # possible values are "empty", "ts_stats" (statistical parameters of time series from scipy.stats.describe)
         # ts_fresh (more statistical parameters), "mixed" (mix of ts_stats and ts_fresh)
-        self.feature_set = "ts_fresh"
+        self.feature_set = "ts_stats"
 
         # 10) number of folds for cross validation
-        self.nfolds = 2
+        self.nfolds = 5
 
         # define DataLoaderType
-        self.data_loader_function = DataLoader
+        self.data_loader_function = DataLoader     # or DataLoader
 
         # if visualization (graphs) are to be computed. If True, the pipeline will do only that.
         self.visualization = False
@@ -96,32 +98,16 @@ class Config:
         # took longer than 2 minutes)
         self.password = None
 
+        # do not touch below this line. All other configuration parameters are defined automatically.
         # number of classes
         if self.selected_dataset in ["hcp_379_51", "hcp_17_51"]:
             self.number_of_classes = 7
-        elif self.selected_dataset in ["uj_200", "mutag", "hcp_rs_379", "hcp_rs_200"]:
+        elif self.selected_dataset in ["uj_200", "mutag", "hcp_rs_606"]:
             self.number_of_classes = 2
-
-        # parameters of training. Number of classes must match the selected dataset!
-        self.training_parameters = {"number_of_classes": self.number_of_classes,
-                                    "hidden_channels": hidden_channels,
-                                    "lr": 0.0001,  #0.00025,     # for mutag: 1e-2, for hcp_17_51 1e-4
-                                    "epochs": 1200,
-                                    "min_lr": 0.00009, #0.0002,     # for mutag: 1e-4, for hcp_17_51 1e-6
-                                    "patience": 25,
-                                    "threshold": 1e-5,
-                                    "samples_for_final_test": 0.40,  # fraction of test split
-                                    "threshold_mode": "rel",
-                                    "factor": 0.5
-                                    }
-
-        # do not touch below this line. All other configuration parameters are defined automatically.
 
         if self.selected_dataset == "uj_200":
             self.filenames = ["fmri_corr.npy", "fmri_ts.npy"]
-        elif self.selected_dataset == "hcp_rs_379":
-            self.filenames = ["fc/all.npy", "ts/all.npy", f"{self.target_variable}_y_list.pkl"]
-        elif self.selected_dataset == "hcp_rs_200":
+        elif self.selected_dataset == "hcp_rs_606":
             self.filenames = ["fc/all.npy", "ts/all.npy", f"{self.target_variable}_y_list.pkl"]
         # if the selected dataset is of type hcp functional, there can be many tasks and the below names are needed
         self.tasks_list = ['wm', 'gambling', 'motor', 'language', 'social', 'relational', 'emotion']
@@ -138,6 +124,19 @@ class Config:
         self.node_embedding_parameters = dict(compute_node_embeddings=True,
                                               embedding_method=node_embedding_method,
                                               merge_features=True)
+
+        # parameters of training. Number of classes must match the selected dataset!
+        self.training_parameters = {"number_of_classes": self.number_of_classes,
+                                    "hidden_channels": hidden_channels,
+                                    "lr": 0.0001,     # for mutag: 1e-2, for hcp_17_51 1e-4
+                                    "epochs": 1200,
+                                    "min_lr": 0.00001,     # for mutag: 1e-4, for hcp_17_51 1e-6
+                                    "patience": 25,
+                                    "threshold": 1e-5,
+                                    "samples_for_final_test": 0.40,  # fraction of test split
+                                    "threshold_mode": "rel",
+                                    "factor": 0.5
+                                    }
 
         # make sure paths are created when the experiment is started
         # name of folders for the data storage of the framework.

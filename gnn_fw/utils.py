@@ -9,7 +9,7 @@ import pickle
 import os
 from scipy import stats
 import torch
-from torch_geometric.data import Data, DataLoader
+from torch_geometric.data import Data, DataLoader, DenseDataLoader
 from torch_geometric.utils import convert as convert
 import random
 import networkx as nx
@@ -105,6 +105,9 @@ def feature_number_and_names(dataset, feature_set, node_embedding_parameters):
             feature_text = f"{number_of_features} {node_embedding_parameters['embedding_method']}"
     else:
         feature_text = f"{number_of_features} {feature_set}"
+
+    # feature_text = feature_text.replace('[', '')
+    # feature_text = feature_text.replace(']', '')
     return number_of_features, feature_text
 
 
@@ -431,7 +434,7 @@ def create_data_loader(dataset, split, samples_for_final_test, config):
     :param dataset: a list of pytorch.geometric Data objects
     :param split: a list of tuples, each tuple contains two lists: training and testing indexes.
     Cross validation split is defined earlier, usually by gfw.utils.skf_splitter or another function
-    :param samples_for_final_test: fraction of test_split to be used for final testing as a holdout set. Defined in
+    :param samples_for_final_test: fraction of validation_split to be used for final testing as a holdout set. Defined in
     gfw.config.Config
     :param config: the configuration file gfw.config.Config
     :return: 3 data loaders: train_loader, test_loader, final_test_loader
@@ -440,31 +443,70 @@ def create_data_loader(dataset, split, samples_for_final_test, config):
     import random
     random.seed(13)
     train_split = list(split[0])
-    test_split = list(split[1])
-    final_test_split = random.sample(test_split, int(len(test_split)*samples_for_final_test))
-    test_split = [x for x in test_split if x not in final_test_split]
+    validation_split = list(split[1])
+    final_test_split = random.sample(validation_split, int(len(validation_split)*samples_for_final_test))
+    validation_split = [x for x in validation_split if x not in final_test_split]
 
-    # defining datasets
-    train_dataset = [dataset[i] for i in train_split]
-    test_dataset = [dataset[i] for i in test_split]
-    final_test_dataset = [dataset[i] for i in final_test_split]
+    # TODO change the if structure to allow other model types
+    if config.model_name != "MLP":
+        # defining datasets
+        train_dataset = [dataset[i] for i in train_split]
+        validation_dataset = [dataset[i] for i in validation_split]
+        final_test_dataset = [dataset[i] for i in final_test_split]
 
-    print(f'Number of training graphs: {len(train_dataset)}')
-    print(f'Number of test graphs: {len(test_dataset)}')
+        print(f'Number of training graphs: {len(train_dataset)}')
+        print(f'Number of test graphs: {len(validation_dataset)}')
 
-    # prepareing loaders
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False)
-    final_test_loader = DataLoader(final_test_dataset, batch_size=config.batch_size, shuffle=False)
+        # preparing loaders
+        train_loader = config.data_loader_function(train_dataset, batch_size=config.batch_size, shuffle=True)
+        validation_loader = config.data_loader_function(validation_dataset, batch_size=config.batch_size, shuffle=False)
+        final_test_loader = config.data_loader_function(final_test_dataset, batch_size=config.batch_size, shuffle=False)
 
-    for step, data in enumerate(train_loader):
-        print(f'Step {step + 1}:')
-        print('=======')
-        print(f'Number of graphs in the current batch: {data.num_graphs}')
-        print(data)
-        print()
-        break
-    return train_loader, test_loader, final_test_loader
+        for step, data in enumerate(train_loader):
+            print(f'Step {step + 1}:')
+            print('=======')
+            print(f'Number of graphs in the current batch: {data.num_graphs}')
+            print(data)
+            print()
+            break
+
+        input_size = None
+
+    # TODO change the if structure to allow other model types
+    elif config.model_name == "MLP":
+
+        ml_data = [data.x.reshape(data.x.shape[0] * data.x.shape[1]) for data in dataset]
+        target_ml_data = [data.y for data in dataset]
+
+        train_data = [ml_data[i] for i in train_split]
+        target_train_data = [target_ml_data[i] for i in train_split]
+        validation_data = [ml_data[i] for i in validation_split]
+        target_validation_data = [target_ml_data[i] for i in validation_split]
+        final_test_data = [ml_data[i] for i in final_test_split]
+        target_final_test_data = [target_ml_data[i] for i in final_test_split]
+        input_size = train_data[0].shape[0]
+
+        class MyDataset(torch.utils.data.Dataset):
+            def __init__(self, X, Y):
+                self.X = torch.stack(X)
+                self.y = [torch.tensor(i) for i in Y]
+                self.y = torch.stack(self.y)
+
+            def __len__(self):
+                return len(self.y)
+
+            def __getitem__(self, idx):
+                return self.X[idx], self.y[idx]
+
+        train_ds = MyDataset(X=train_data, Y=target_train_data)
+        valid_ds = MyDataset(X=validation_data, Y=target_validation_data)
+        final_test_ds = MyDataset(X=final_test_data, Y=target_final_test_data)
+
+        train_loader = torch.utils.data.DataLoader(train_ds, batch_size=config.batch_size, shuffle=True)
+        validation_loader = torch.utils.data.DataLoader(valid_ds, batch_size=config.batch_size, shuffle=True)
+        final_test_loader = torch.utils.data.DataLoader(final_test_ds, batch_size=config.batch_size, shuffle=True)
+
+    return train_loader, validation_loader, final_test_loader, input_size
 
 
 def derive_time_series_features(dir_name, test_run_name, filenames, features, printout, threshold):
@@ -507,10 +549,10 @@ def derive_time_series_features(dir_name, test_run_name, filenames, features, pr
     for patient in range(corr_.shape[0]):
         patient_start = time.time()
         corr_[patient][corr_[patient] < threshold] = 0
-        for node in index_of_source_nodes:
+        for node in list(range(brain_parcellation)):
 
-            index_of_target_nodes_dict[f"{patient}.{node}"] = np.nonzero(corr_[patient][node])
-            time_series_data_points = ts_[patient].shape[0]
+            index_of_target_nodes_dict[f"{patient}.{node}"] = np.nonzero(corr_[patient][node])   # this is never 0 without thresholding
+            time_series_data_points = ts_[patient].shape[0]     # TODO they should be the same length, raise if they are not
             node_ts = np.reshape(ts_[patient], (brain_parcellation, time_series_data_points))[node]
 
             if features == 'ts_stats':
@@ -591,8 +633,9 @@ def create_mri_dataset(correlation_matrix, index_of_source_nodes, index_of_targe
     """
     dataset_filepath = f"{config.directories['datasets']}/{test_run_name}.pt"
     if os.path.isfile(dataset_filepath):
-        print('This dataset was already created, only loading data.')
-        return torch.load(dataset_filepath)
+        dataset = torch.load(dataset_filepath)
+        print(f'This dataset was already created, only loading data. Recordings in data set: {len(dataset)}')
+        return dataset
 
     else:
         # prepare the whole dataset
@@ -600,24 +643,33 @@ def create_mri_dataset(correlation_matrix, index_of_source_nodes, index_of_targe
         for patient in range(correlation_matrix.shape[0]):  # patient is a number of patient
             edge_list = list()
 
-            sum_of_patient_edges = 0
+            # sum_of_patient_edges = 0  # TODO DELETE
             # prepare edge_index and edge_attributes
+            i = 0
             for node in index_of_source_nodes:  # node is a number of node
                 temp_list = index_of_target_nodes_dict[f"{patient}.{node}"][0]
+
                 temp_list = [[node, x] for x in temp_list]
+                # if i == 0:
+                    # print(len(temp_list))
+                i+=1
                 edge_list.extend(temp_list)
 
-                # the total number of edges. This is not needed actually later on.
-                sum_of_patient_edges += len(temp_list)
+                # the total number of edges. This is not needed actually later on.      # TODO DELETE
+                # sum_of_patient_edges += len(temp_list)
 
             # defining edge attributes for the given patient
             # edge_attributes = torch.tensor(np.reshape(corr_[patient]
             # [threshold < corr_[patient]], (sum_of_patient_edges,1)))
 
             # TODO analyze if edge_attributes are correctly defined from the correlation matrix
+            # print(correlation_matrix[patient].shape)
             edge_attributes = torch.tensor(correlation_matrix[patient][threshold < correlation_matrix[patient]])
+            # print(edge_attributes)      # TODO investigate the shape, understand why this is not a list of lists for instance
+            # quit()
+
             # this line gets rid of the main diagonal of 0s in the correlation matrix
-            edge_attributes = edge_attributes[edge_attributes != 0]
+            edge_attributes = edge_attributes[edge_attributes != 0]     # TODO is this really necessary?
             edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
 
             x_list = list()
@@ -661,14 +713,23 @@ def skf_splitter(nfolds, y_list, dataset_name):
             splits.append((train, test))
 
     else:
-        print("Using simple splitter for HCP RS data sets.")
-        # the HCP RS data sets use concatenations of recordings from two separate recording sessions
-        # the idea is to train on the first session and test on the second session.
-        train_indexes = list(range(0, int(len(y_list)/2)))
-        test_indexes = list(range(int(len(y_list)/2), len(y_list)))
-        random.shuffle(train_indexes)
-        random.shuffle(test_indexes)
-        splits = [(train_indexes, test_indexes)]
+        indexes = list(range(0, len(y_list)))
+
+        y_list = np.array(y_list)
+        splits = list()
+
+        for train, test in StratifiedKFold(n_splits=nfolds, random_state=2021, shuffle=True).split(indexes, y_list):
+            splits.append((train, test))
+
+    # else:
+    #     print("Using simple splitter for HCP RS data sets.")
+    #     # the HCP RS data sets use concatenations of recordings from two separate recording sessions
+    #     # the idea is to train on the first session and test on the second session.
+    #     train_indexes = list(range(0, int(len(y_list)/2)))
+    #     test_indexes = list(range(int(len(y_list)/2), len(y_list)))
+    #     random.shuffle(train_indexes)
+    #     random.shuffle(test_indexes)
+    #     splits = [(train_indexes, test_indexes)]
 
     return splits
 
@@ -821,12 +882,21 @@ def decode_feature_string(feature_string):
     return final_feature_label
 
 
-def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3]):
+def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3], number_of_regions=200):
+    """
+    The function assumes that the raw numpy files include 4 fMRI recordings of a single patient:
+    1) from Left to Right in the 1st recording session, 2) from Right to Left in the 1st recording session,
+    3) from Left to Right in the 2nd recording session, and 4) from Right to Left in the 2nd recording session.
+    From the perspective of HCP data set labels this means that for patient #1 we should have 4 times the same label
+    regarding for example Gender.
+    :param disk_list:
+    :return:
+    """
     import zipfile
     from pathlib import Path
     disk_tags_list = [f"disk{str(x)}" for x in disk_list]
     file_types_list = ["fc", "ts"]
-    root_dir = "./source_data/hcp_rs"
+    root_dir = f"./source_data/hcp_rs_{number_of_regions}"
     variants_list = ["rest1", "rest2"]
     recording_type_list = ["lr", "rl"]
 
@@ -842,11 +912,12 @@ def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3]):
                     os.mkdir(extract_path)
                 except FileExistsError:
                     pass
-                with zipfile.ZipFile(file_name,"r") as zip_ref:
+                with zipfile.ZipFile(file_name, "r") as zip_ref:
                     zip_ref.extractall(extract_path)
 
     unzip_files(root_dir, file_types_list, disk_tags_list)
 
+    # reading the source numpy files
     final_matrices_dict = dict()
     for file_type in file_types_list:
         folders_list = [f"{file_type}_{disk_tag}" for disk_tag in disk_tags_list]
@@ -857,7 +928,7 @@ def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3]):
                 prefix = file_type
                 prefix2 = "corr_"
             elif file_type == "ts":
-                prefix = "timeseries"
+                prefix = "ts"
                 prefix2 = ""
             dir_path = os.path.join(root_dir, folder, prefix)
             print(dir_path)
@@ -892,12 +963,8 @@ def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3]):
             matrices_list.append(final_matrices_dict[file_type][variant])
         super_final_matrix_dict[file_type] = np.vstack(matrices_list)
 
-    # save path based on the real_number_of_recordings_in_a_single_recording_session
-    number_of_recordings = str(final_matrices_dict[file_types_list[0]][variants_list[0]].shape[0])
-    print(f"The number of recordings used for example for data set name creation is: {number_of_recordings}.")
-    dataset_save_path = f"{root_dir}_{number_of_recordings}"
-    file_type_save_paths = [os.path.join(dataset_save_path, file_type) for file_type in file_types_list]
-    filepahts_list = [dataset_save_path]
+    file_type_save_paths = [os.path.join(root_dir, file_type) for file_type in file_types_list]
+    filepahts_list = [root_dir]
     filepahts_list.extend(file_type_save_paths)
     print(filepahts_list)
 
@@ -910,59 +977,62 @@ def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3]):
 
     # save numpy files
     for file_type in file_types_list:
-        file_save_path = os.path.join(dataset_save_path, file_type, "all.npy")
+        file_save_path = os.path.join(root_dir, file_type, "all.npy")
         print(file_save_path)
         np.save(file_save_path, super_final_matrix_dict[file_type])
 
 
-def compute_hcp_rs_y_list(target_variable="Gender", number_of_recordings=606):
-    import zipfile
-    from pathlib import Path
-    root_dir = "./source_data/hcp_rs"
-    dataset_save_path = f"{root_dir}_{str(number_of_recordings)}"
+def compute_hcp_rs_y_list(disk_list, target_variable="Gender", number_of_nodes=200):
+    root_dir = f"./source_data/hcp_rs_{number_of_nodes}"
+    dataset_save_path = f"{root_dir}"
     y_list_filename = os.path.join(dataset_save_path, f"{target_variable}_y_list.pkl")
 
-    if os.path.isfile(y_list_filename):
-        print('The y_list was already created, only loading data.')
-        with open(y_list_filename, "rb") as fp:
-            y_list = pickle.load(fp)
+    # if os.path.isfile(y_list_filename):
+    #     print('The y_list was already created, only loading data.')
+    #     with open(y_list_filename, "rb") as fp:
+    #         y_list = pickle.load(fp)
+    # if False:
+    #     pass
+    #
+    # else:
 
+    # if target_variable == "Gender":
+    disk_tags_list = [f"disk{str(x)}" for x in disk_list]
+    subIDname = 'subjectsID'
+
+    # create subject ID paths
+    subID_name_list = [f"{subIDname}_{disk}.npy" for disk in disk_tags_list]
+    subID_paths = [os.path.join(root_dir, subID_path) for subID_path in subID_name_list]
+    print(subID_paths)
+
+    # read the file with target values
+    csv_file = pd.read_csv(os.path.join(root_dir, "HCPData.csv"))
+
+    if target_variable in list(csv_file.columns):
+        print('Computing target variable file.')
+        # create y_list
+        y_list = list()
+        for subID_path in subID_paths:
+            subID_list = np.load(subID_path).tolist()
+            actual_file = csv_file[csv_file['Subject'].isin([int(x) for x in list(subID_list)])]
+            y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
+            # we are extending twice by the same list because the first extend refers to lr recording,
+            # second rl recording
+            y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
+
+        # the final extend of itself because the pipeline will compute all features for all subjects
+        # for both rest1 and rest2 recording sessions and they will be divided into training and test
+        # later based on the real number of subjects
+        y_list.extend(y_list)
+
+        # save the computed y_list to disk
+        with open(y_list_filename, "wb") as fp:
+            pickle.dump(y_list, fp)
+
+        print(y_list_filename)
     else:
-        print("Computing y_list.")
-        if target_variable == "Gender":
-            disk_list = [1, 2, 3]
-            disk_tags_list = [f"disk{str(x)}" for x in disk_list]
-            subIDname = 'subjectsID'
-
-            # create subject ID paths
-            subID_name_list = [f"{subIDname}_{disk}.npy" for disk in disk_tags_list]
-            subID_paths = [os.path.join(root_dir, subID_path) for subID_path in subID_name_list]
-            print(subID_paths)
-
-            # read the file with target values
-            csv_file = pd.read_csv(os.path.join(root_dir, "HCPData.csv"))
-
-            # create y_list
-            y_list = list()
-            for subID_path in subID_paths:
-                subID_list = np.load(subID_path).tolist()
-                actual_file = csv_file[csv_file['Subject'].isin([int(x) for x in list(subID_list)])]
-                y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
-                # we are extending twice by the same list because the first extend refers to lr recording,
-                # second rl recording
-                y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
-
-            # the final extend of itself because the pipeline will compute all features for all subjects
-            # for both rest1 and rest2 recording sessions and they will be divided into training and test
-            # later based on the real number of subjects
-            y_list.extend(y_list)
-
-            # save the computed y_list to disk
-            with open(y_list_filename, "wb") as fp:
-                pickle.dump(y_list, fp)
-        else:
-            print("Target variables other than 'Gender' are not yet supported.")
-            quit()
+        print("Did you select a proper target variable?")
+        quit()
 
     return y_list
 
@@ -981,12 +1051,14 @@ def load_dataset(config):
         test_run_name = "mutag"
         test_run_name_for_whole_dataset = f"{config.selected_dataset}_{config.threshold}"
 
+    # TODO remove uj?
     elif (config.selected_dataset.find("hcp") != -1) or (config.selected_dataset == "uj_200"):
         # if resting state dataset
         if (config.selected_dataset.find("rs") != -1) or (config.selected_dataset == "uj_200"):
             if config.selected_dataset.find("rs") != -1:
                 if config.unpack_hcp_rs_zipfiles_and_vstack_dataset:
-                    preprocess_raw_hcp_rs_zipfiles(disk_list=config.disk_list)
+                    preprocess_raw_hcp_rs_zipfiles(disk_list=config.disk_list,
+                                                   number_of_regions=config.unpack_hcp_rs_zipfiles_and_vstack_dataset)
 
             print("Loading resting state data set")
             index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name, correlation_matrix,\
@@ -1008,9 +1080,17 @@ def load_dataset(config):
 
             # define y for hcp resting state datasets
             if config.selected_dataset.find("rs") != -1:
-                y_list = compute_hcp_rs_y_list(number_of_recordings=config.number_of_recordings)
+                y_list = compute_hcp_rs_y_list(number_of_nodes=brain_parcellation,
+                                               disk_list=config.disk_list,
+                                               target_variable=config.target_variable)
 
-            # modify the dummy y in the whole dataset for actual values
+                # assumed number of subjects in a disk is 102
+                number_of_subjects_per_disk = 102
+                if config.selected_dataset.find('hcp_rs_379') != -1:
+                    number_of_subjects_per_disk = 101
+                # len(config.disk_list) is multiplied by 4 because there are 4 recordings per patient in each disk
+                dataset = dataset[:(number_of_subjects_per_disk * len(config.disk_list)*4)]
+                # modify the dummy y in the whole dataset for actual values
             for num, data in enumerate(dataset):
                 data.y = y_list[num]
 
