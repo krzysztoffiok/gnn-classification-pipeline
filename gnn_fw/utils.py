@@ -14,7 +14,6 @@ from torch_geometric.utils import convert as convert
 import random
 import networkx as nx
 import matplotlib.pyplot as plt
-from . import config
 import karateclub
 from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn import metrics
@@ -24,7 +23,12 @@ from captum.attr import Saliency, IntegratedGradients
 from collections import defaultdict
 from torch_geometric.data import InMemoryDataset
 
-config = config.Config()
+directories = {"source data": "source_data",
+                    "datasets": "datasets",
+                    "graph visualizations": "graph_visualizations",
+                    "training visualizations": "training_visualizations"}
+
+# directories[''] = os.path.join(directories['training visualizations'], selected_dataset)
 
 
 class NodeEmbeddingFunctions:
@@ -178,7 +182,7 @@ def load_obj(name):
         return pickle.load(f)
 
 
-def preprocess_mri_resting_state_data(selected_dataset, filenames, feature_set, threshold, printout=False):
+def preprocess_mri_resting_state_data(selected_dataset, filenames, feature_set, threshold, recompute, printout=False):
     """
     A function fo preprocess MRI data from the Jagiellonian University
     :param selected_dataset: the name of the selected data set
@@ -198,12 +202,12 @@ def preprocess_mri_resting_state_data(selected_dataset, filenames, feature_set, 
     
     features = feature_set
 
-    dir_name = f"{config.directories['source data']}/{selected_dataset}"
+    dir_name = f"{directories['source data']}/{selected_dataset}"
     filenames = [f"{dir_name}/{x}" for x in filenames]
     test_run_name = f"{selected_dataset}_{threshold}_{features}"
 
     index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name, corr_, brain_parcellation \
-        = derive_time_series_features(dir_name, test_run_name, filenames, features, printout, threshold)
+        = derive_time_series_features(dir_name, test_run_name, filenames, features, printout, threshold, recompute)
 
     return index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name, corr_,\
         brain_parcellation
@@ -216,7 +220,7 @@ def load_mutag_dataset():
     """
     from torch_geometric.datasets import TUDataset
     print("Loading mutag dataset")
-    return TUDataset(root=f"{config.directories['source data']}/TUDataset", name='MUTAG')
+    return TUDataset(root=f"{directories['source data']}/TUDataset", name='MUTAG')
 
 
 def create_instance_graph(data, graph_type="full"):
@@ -371,7 +375,7 @@ def visualize_graph(data_instance_number, dataset, dataset_name, graph_type):
         print(f"The graph number {num} had {graph.number_of_edges()} edges.")
         plt.figure(3, figsize=(8, 8))
         nx.draw(graph, nx.draw_networkx(graph), with_labels=True)
-        plt.savefig(f"{config.directories['graph visualizations']}/{dataset_name}_{data_instance_number}_{num}.png")
+        plt.savefig(f"{directories['graph visualizations']}/{dataset_name}_{data_instance_number}_{num}.png")
     quit()
 
 
@@ -392,7 +396,7 @@ def compute_node_embeddings(node_embedding_parameters, dataset, test_run_name, g
 
     test_run_name = f"{test_run_name}_{node_embedding_parameters['embedding_method']}" \
                     f"_{node_embedding_parameters['merge_features']}"
-    dataset_filepath = f"{config.directories['datasets']}/{test_run_name}.pt"
+    dataset_filepath = f"{directories['datasets']}/{test_run_name}.pt"
 
     if os.path.isfile(dataset_filepath):
         print('The node embeddings were already computed in this setup, only loading data.')
@@ -509,7 +513,7 @@ def create_data_loader(dataset, split, samples_for_final_test, config):
     return train_loader, validation_loader, final_test_loader, input_size
 
 
-def derive_time_series_features(dir_name, test_run_name, filenames, features, printout, threshold):
+def derive_time_series_features(dir_name, test_run_name, filenames, features, printout, threshold, recompute):
     """
     A function for deriving node features based on time series data. Used in all MRI datasets.
     :param dir_name: path of the source directory of the data set
@@ -526,14 +530,19 @@ def derive_time_series_features(dir_name, test_run_name, filenames, features, pr
         # if the test run was already computed, we change the feature set to "empty" so that the whole computation takes
         # minimum time. However, it must be run because variables like brain parcellation or index_of_target_nodes_dict
         # must be computed
-        features = "empty"
-        print('This feature set was already computed, only loading data.')
-        load = True
-        printout = False
+        if not recompute:
+            features = "empty"
+            print('This feature set was already computed, only loading data.')
+            load = True
+            printout = False
+
+        else:
+            print('This feature set was already computed, but "recompute" is True, recomputing data.')
+            load = False
 
     # load correlation file
     corr_ = np.round(np.load(filenames[0], allow_pickle=True).astype(np.float16), 3)
-    ts_ = np.load(filenames[1], allow_pickle=True)
+    ts_ = np.round(np.load(filenames[1], allow_pickle=True).astype(np.float16), 3)
 
     # preprocessing for dataset creation
     # compute brain parcellation
@@ -545,14 +554,23 @@ def derive_time_series_features(dir_name, test_run_name, filenames, features, pr
     # dict for lists of node features
     node_feature_dict = dict()
 
+    # a placeholder for length of recording
+    length_of_recordings = list()
+
     # create a list of target nodes for each patient for each node
     for patient in range(corr_.shape[0]):
         patient_start = time.time()
         corr_[patient][corr_[patient] < threshold] = 0
-        for node in list(range(brain_parcellation)):
 
+        # checking the length of the time series for the given patient/recording
+        time_series_data_points = ts_[patient].shape[0]
+        length_of_recordings.append(time_series_data_points)
+        # a sanity check if length of recordings is equal for all patients
+        if len(set(length_of_recordings)) != 1:
+            raise ValueError(f"The length of recording of {patient} patient didn't match previous patients.")
+
+        for node in list(range(brain_parcellation)):
             index_of_target_nodes_dict[f"{patient}.{node}"] = np.nonzero(corr_[patient][node])   # this is never 0 without thresholding
-            time_series_data_points = ts_[patient].shape[0]     # TODO they should be the same length, raise if they are not
             node_ts = np.reshape(ts_[patient], (brain_parcellation, time_series_data_points))[node]
 
             if features == 'ts_stats':
@@ -592,7 +610,7 @@ def derive_time_series_features(dir_name, test_run_name, filenames, features, pr
         brain_parcellation
 
 
-def preprocess_mri_task_based_data(task, dataset_name, feature_set, threshold, printout=False):
+def preprocess_mri_task_based_data(task, dataset_name, feature_set, threshold, recompute, printout=False):
     """
     A function which creates the dataset (a list of pytorch.geometric Data objects) from preprocessed UJ data.
     :param task:
@@ -607,19 +625,20 @@ def preprocess_mri_task_based_data(task, dataset_name, feature_set, threshold, p
     filenames = [f"fc/corr_{task}.npy",
                  f"timeseries/{task}.npy"]
 
-    dir_name = f"{config.directories['source data']}/{dataset_name}"
+    dir_name = f"{directories['source data']}/{dataset_name}"
     filenames = [f"{dir_name}/{x}" for x in filenames]
     test_run_name = f"{dataset_name}_{task}_{threshold}_{features}"
 
     index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name, corr_, brain_parcellation \
-        = derive_time_series_features(dir_name, test_run_name, filenames, features, printout, threshold)
+        = derive_time_series_features(dir_name, test_run_name, filenames, features, printout, threshold,
+                                      recompute)
 
     return index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name, corr_,\
         brain_parcellation
 
 
 def create_mri_dataset(correlation_matrix, index_of_source_nodes, index_of_target_nodes_dict, threshold,
-                       node_feature_dict, brain_parcellation, test_run_name):
+                       node_feature_dict, brain_parcellation, test_run_name, recompute):
     """
     A function which creates the dataset (a list of pytorch.geometric Data objects) from preprocessed UJ data.
     :param correlation_matrix:
@@ -631,19 +650,20 @@ def create_mri_dataset(correlation_matrix, index_of_source_nodes, index_of_targe
     :param test_run_name:
     :return:
     """
-    dataset_filepath = f"{config.directories['datasets']}/{test_run_name}.pt"
-    if os.path.isfile(dataset_filepath):
-        dataset = torch.load(dataset_filepath)
-        print(f'This dataset was already created, only loading data. Recordings in data set: {len(dataset)}')
-        return dataset
+    dataset_filepath = f"{directories['datasets']}/{test_run_name}.pt"
+    if not recompute:
+        if os.path.isfile(dataset_filepath):
+            dataset = torch.load(dataset_filepath)
+            print(f'This dataset was already created, only loading data. Recordings in data set: {len(dataset)}')
+            return dataset
+        else:
+            print("You need to create this data set first. Try passing 'recompute = True'.")
 
     else:
         # prepare the whole dataset
         dataset = list()
         for patient in range(correlation_matrix.shape[0]):  # patient is a number of patient
             edge_list = list()
-
-            # sum_of_patient_edges = 0  # TODO DELETE
             # prepare edge_index and edge_attributes
             i = 0
             for node in index_of_source_nodes:  # node is a number of node
@@ -742,9 +762,9 @@ def compute_metrics(df_res, test_run_name, dataset_name):
     :param test_run_name: the name of the test run which the results data frame is representing
     :return: None, but saves .xlsx with metric results on disk
     """
-    save_path = f"./{config.directories['training visualizations']}/{dataset_name}/{test_run_name}"
+    save_path = f"./{directories['training visualizations']}/{dataset_name}/{test_run_name}"
     try:
-        os.makedirs(f"./{config.directories['training visualizations']}/{dataset_name}")
+        os.makedirs(f"./{directories['training visualizations']}/{dataset_name}")
     except FileExistsError:
         pass
     df_res.to_excel(f"{save_path}_trues_preds.xlsx")
@@ -898,7 +918,9 @@ def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3], number_of_regions=200):
     file_types_list = ["fc", "ts"]
     root_dir = f"./source_data/hcp_rs_{number_of_regions}"
     variants_list = ["rest1", "rest2"]
+    # variants_list = ["rest1"]
     recording_type_list = ["lr", "rl"]
+    # recording_type_list = ["lr"]
 
     def unzip_files(root_dir, file_types_list, disk_tags_list):
         for file_type in file_types_list:
@@ -982,7 +1004,7 @@ def preprocess_raw_hcp_rs_zipfiles(disk_list=[1, 2, 3], number_of_regions=200):
         np.save(file_save_path, super_final_matrix_dict[file_type])
 
 
-def compute_hcp_rs_y_list(disk_list, target_variable="Gender", number_of_nodes=200):
+def compute_hcp_rs_y_list(disk_list, config, target_variable="Gender", number_of_nodes=200):
     root_dir = f"./source_data/hcp_rs_{number_of_nodes}"
     dataset_save_path = f"{root_dir}"
     y_list_filename = os.path.join(dataset_save_path, f"{target_variable}_y_list.pkl")
@@ -1016,14 +1038,16 @@ def compute_hcp_rs_y_list(disk_list, target_variable="Gender", number_of_nodes=2
             subID_list = np.load(subID_path).tolist()
             actual_file = csv_file[csv_file['Subject'].isin([int(x) for x in list(subID_list)])]
             y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
-            # we are extending twice by the same list because the first extend refers to lr recording,
-            # second rl recording
-            y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
+            if config.rec_per_disk >= 2:
+                # we are extending twice by the same list because the first extend refers to lr recording,
+                # second rl recording
+                y_list.extend(actual_file[target_variable].astype("category").cat.codes.tolist())
 
-        # the final extend of itself because the pipeline will compute all features for all subjects
-        # for both rest1 and rest2 recording sessions and they will be divided into training and test
-        # later based on the real number of subjects
-        y_list.extend(y_list)
+        if config.rec_per_disk == 4:
+            # the final extend of itself because the pipeline will compute all features for all subjects
+            # for both rest1 and rest2 recording sessions and they will be divided into training and test
+            # later based on the real number of subjects
+            y_list.extend(y_list)
 
         # save the computed y_list to disk
         with open(y_list_filename, "wb") as fp:
@@ -1067,11 +1091,13 @@ def load_dataset(config):
                                                   filenames=config.filenames,
                                                   feature_set=config.feature_set,
                                                   threshold=config.threshold,
+                                                  recompute=config.recompute,
                                                   printout=config.printout)
             # create the dataset
             dataset = create_mri_dataset(correlation_matrix, index_of_source_nodes,
                                          index_of_target_nodes_dict, config.threshold,
-                                         node_feature_dict, brain_parcellation, test_run_name)
+                                         node_feature_dict, brain_parcellation, test_run_name,
+                                         config.recompute)
 
             # define y for Jagiellonian University resting state data
             if config.selected_dataset == "uj_200":
@@ -1082,14 +1108,15 @@ def load_dataset(config):
             if config.selected_dataset.find("rs") != -1:
                 y_list = compute_hcp_rs_y_list(number_of_nodes=brain_parcellation,
                                                disk_list=config.disk_list,
-                                               target_variable=config.target_variable)
+                                               target_variable=config.target_variable,
+                                               config=config)
 
                 # assumed number of subjects in a disk is 102
                 number_of_subjects_per_disk = 102
                 if config.selected_dataset.find('hcp_rs_379') != -1:
                     number_of_subjects_per_disk = 101
                 # len(config.disk_list) is multiplied by 4 because there are 4 recordings per patient in each disk
-                dataset = dataset[:(number_of_subjects_per_disk * len(config.disk_list)*4)]
+                dataset = dataset[:(number_of_subjects_per_disk * len(config.disk_list)*config.rec_per_disk)]
                 # modify the dummy y in the whole dataset for actual values
             for num, data in enumerate(dataset):
                 data.y = y_list[num]
@@ -1104,11 +1131,12 @@ def load_dataset(config):
                 index_of_source_nodes, index_of_target_nodes_dict, node_feature_dict, test_run_name,\
                 correlation_matrix, brain_parcellation\
                     = preprocess_mri_task_based_data(task, config.selected_dataset, config.feature_set,
-                                                     config.threshold, printout=config.printout)
+                                                     config.threshold, config.recompute, printout=config.printout)
                 # create the hcp_dataset
                 local_dataset = create_mri_dataset(correlation_matrix, index_of_source_nodes,
                                                    index_of_target_nodes_dict, config.threshold,
-                                                   node_feature_dict, brain_parcellation, test_run_name)
+                                                   node_feature_dict, brain_parcellation, test_run_name,
+                                                   recompute=config.recompute)
                 for data in local_dataset:
                     dataset.append(data)
 

@@ -1,11 +1,13 @@
 import torch
 import gnn_fw as gfw
 import pandas as pd
-import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
 import os
 from torch_geometric.utils import to_networkx
+import importlib.util
+from os import listdir
+from os.path import isfile, join
 
 """
 How the script works:
@@ -14,15 +16,6 @@ How the script works:
 3) run the "run_all_experiments" function, which iterates over lists of parameters, modifies locally the configuration 
 file for each test run and finally runs the "run" function 
 """
-
-config = gfw.config.Config()
-model_list = config.model_list
-node_embedding_method_list = config.node_embedding_method_list
-hidden_channel_list = config.hidden_channel_list
-threshold_list = config.threshold_list
-graph_type_list = config.graph_type_list
-batch_size_list = config.batch_size_list
-add_degree_list = config.add_degree_list
 
 
 def run(config):
@@ -70,8 +63,8 @@ def run(config):
             dataset = gfw.utils.add_networkx_node_features(dataset, config.nx_feature)
             torch.save(dataset, dataset_filepath)
 
-    # no matter which dataset, use the same splitter. Splits is a list (len=nfolds) of
-    # tuples(train_indexes, test_indexes)
+    # no matter which dataset, use the same splitter. Splits is a list (len=nfolds)
+    # of tuples(train_indexes, test_indexes)
     splits = gfw.utils.skf_splitter(nfolds=config.nfolds, y_list=y_list, dataset_name=config.selected_dataset)
 
     # this ensures that there are no duplicated edges
@@ -130,8 +123,6 @@ def run(config):
         # concat with final dataframe
         dffinal = pd.concat([dffinal, dffold], axis=0)
 
-        # TODO this was a too broad exception, it also included some other than OOM errors when testing the framework
-        #  and that is the reason for commenting out.
         # except RuntimeError:  # cuda out of memory
         #     print("CUDA OOM error. Continuing to next test run.")
         #     oom_error = True
@@ -161,7 +152,7 @@ def run(config):
 
 
 def run_all_experiments(model_list, hidden_channel_list, threshold_list, graph_type_list,
-                        batch_size_list, add_degree_list, node_embedding_method_list):
+                        batch_size_list, add_degree_list, node_embedding_method_list, config):
     experiment_start = datetime.utcnow()
     torch.cuda.empty_cache()
 
@@ -209,5 +200,33 @@ def run_all_experiments(model_list, hidden_channel_list, threshold_list, graph_t
             gfw.utils.send_notification_email(password=config.password, duration=duration)
 
 
-run_all_experiments(model_list, hidden_channel_list, threshold_list, graph_type_list,
-                    batch_size_list, add_degree_list, node_embedding_method_list)
+if __name__ == '__main__':
+    # here provide the config name
+    name_of_the_selected_config = "hcp_17_51"
+
+    config_path = './gnn_fw/configs'
+    config_file_names = sorted([f for f in listdir(config_path) if isfile(join(config_path, f))])
+    config_file_names = sorted([f for f in config_file_names if f.find(name_of_the_selected_config) != -1])
+    experiment_start = datetime.utcnow()
+
+    time_list = list()
+    for config_file_name in config_file_names:
+        print("The analyzed config is: ", config_file_name)
+        spec = importlib.util.spec_from_file_location('gnn_fw.configs', join(config_path, config_file_name))
+        config = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config)
+        config = config.Config()
+
+        # config.recompute = True
+        # config.rec_per_disk = 1
+
+        model_list = config.model_list
+        node_embedding_method_list = config.node_embedding_method_list
+        hidden_channel_list = config.hidden_channel_list
+        threshold_list = config.threshold_list
+        graph_type_list = config.graph_type_list
+        batch_size_list = config.batch_size_list
+        add_degree_list = config.add_degree_list
+
+        run_all_experiments(model_list, hidden_channel_list, threshold_list, graph_type_list,
+                            batch_size_list, add_degree_list, node_embedding_method_list, config)

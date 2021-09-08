@@ -167,7 +167,7 @@ def model_launcher(model, train_loader, validate_loader, test_run_name, threshol
                 trues.extend(y.tolist())
             return preds, trues
 
-    # Functions defined for the case in which a GNN model is used
+    # Functions defined for the case in which a GCN model is used
     else:
         def train(model, loader, device, optimizer, criterion, use_edges):
             model.train()
@@ -592,9 +592,9 @@ class GAT(torch.nn.Module):
     def __init__(self, hidden_channels, number_of_features, number_of_classes):
         super(GAT, self).__init__()
         out_dimension = hidden_channels
-        self.ds = 0.05
-        heads1 = 16  # 24 worked nice
-        heads2 = 16
+        self.ds = 0.2
+        heads1 = 56  # 24 worked nice
+        heads2 = 56
         in_dimension = out_dimension * heads1
         lin_dimension = hidden_channels
         self.conv1 = GATConv(in_channels=number_of_features, out_channels=out_dimension, heads=heads1, dropout=self.ds)
@@ -606,7 +606,7 @@ class GAT(torch.nn.Module):
         self.lin = Linear(lin_dimension, number_of_classes)
 
     def forward(self, x, edge_index, batch):
-        ds = 0.95
+        ds = 0.5
         x = F.elu(self.conv1(x, edge_index))
         x = self.bn1(x)
         x = F.dropout(x, p=ds, training=self.training)
